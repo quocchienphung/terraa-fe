@@ -6,18 +6,22 @@
 
 export type QualityTier = "desktop" | "mobile";
 
-export const EARTH_TEXTURES: Record<QualityTier, { day: string; night: string; masks: string; normal: string }> = {
+/**
+ * One tier is loaded per visit. albedo/night are colour (sRGB); clouds is a single density
+ * channel; relief packs elevation (R) and the water mask (G) losslessly. See MANIFEST.md.
+ */
+export const EARTH_TEXTURES: Record<QualityTier, { albedo: string; night: string; clouds: string; relief: string }> = {
   desktop: {
-    day: "/textures/earth/earth-day-4k.webp",
+    albedo: "/textures/earth/earth-albedo-4k.webp",
     night: "/textures/earth/earth-night-4k.webp",
-    masks: "/textures/earth/earth-masks-2k.webp",
-    normal: "/textures/earth/earth-normal-2k.webp",
+    clouds: "/textures/earth/earth-clouds-4k.webp",
+    relief: "/textures/earth/earth-relief-4k.webp",
   },
   mobile: {
-    day: "/textures/earth/earth-day-2k.webp",
+    albedo: "/textures/earth/earth-albedo-2k.webp",
     night: "/textures/earth/earth-night-2k.webp",
-    masks: "/textures/earth/earth-masks-2k.webp",
-    normal: "/textures/earth/earth-normal-2k.webp",
+    clouds: "/textures/earth/earth-clouds-2k.webp",
+    relief: "/textures/earth/earth-relief-2k.webp",
   },
 };
 
@@ -73,7 +77,7 @@ export const INTERACTION = {
   inertiaSeconds: 0.7,
   /** Pointer travel (CSS px) before a press becomes a drag. */
   dragThresholdPx: 5,
-  /** Yaw per CSS px = gain / projected globe radius: 1 keeps the grabbed point under the cursor near the centre. */
+  /** Yaw per CSS px = gain / (screen px per radian at the grabbed point): 1 keeps that point under the cursor. */
   dragGain: 1,
   /** Smoothing of the drag velocity estimate (s), the age after which a release counts as "stopped" (ms), and the fling cap (rad/s). */
   velocityTau: 0.05,
@@ -94,20 +98,35 @@ export const CLOUDS = {
 export const SUN_DIRECTION: [number, number, number] = [0.9, 0.24, 0.1];
 
 export const LOOK = {
-  saturation: 0.78,
-  sunIntensity: 0.88,
-  ambient: 0.018,
+  saturation: 0.8,
+  sunIntensity: 0.95,
+  ambient: 0.012,
   exposure: 1.0,
-  normalScale: 0.9,
-  specular: 0.03,
   nightIntensity: 1.15,
+  /**
+   * Relief from real elevation (GEBCO_08): slopes are computed in metres per metre and
+   * multiplied by this vertical exaggeration — global-scale terrain is invisible at 1×.
+   */
+  reliefExaggeration: 18,
+  /** Water: normalised Blinn-Phong with Schlick Fresnel, only where the water mask is set. */
+  waterSpecular: 0.9,
+  waterShininess: 90,
   atmosphereColor: [0.3, 0.72, 0.95] as [number, number, number],
   /** Inner Fresnel haze on the surface and outer rim shell thickness (fraction of radius). */
-  hazeStrength: 0.18,
+  hazeStrength: 0.16,
   rimScale: 1.012,
   rimStrength: 0.38,
+  /** Cloud shell radius; its height above the surface also sets the cloud-shadow offset. */
   cloudRadius: 1.004,
-  cloudOpacity: 0.66,
+  cloudOpacity: 0.85,
+  /** Density ramp on the cloud map (0–1) and optical-depth gain: alpha = 1 − exp(−k·density). */
+  cloudDensityLow: 0.2,
+  cloudDensityHigh: 0.98,
+  cloudOpticalDepth: 1.9,
+  /** How much the sunward neighbour's density darkens a cloud texel (soft self-shading). */
+  cloudSelfShadow: 0.35,
+  /** Darkening of the ground under the cloud cast in the sun direction. */
+  cloudShadow: 0.35,
 } as const;
 
 /** Scroll entry: scale and vertical offset (px) eased in as the section enters. */

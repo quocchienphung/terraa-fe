@@ -62,8 +62,8 @@ const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 type DragState =
   | { kind: "none" }
-  | { kind: "pending"; pointerId: number; startX: number; startY: number; lastX: number; lastT: number }
-  | { kind: "drag"; pointerId: number; lastX: number; lastT: number; velocity: number };
+  | { kind: "pending"; pointerId: number; startX: number; startY: number; lastX: number; lastT: number; pxPerRadian: number }
+  | { kind: "drag"; pointerId: number; lastX: number; lastT: number; velocity: number; pxPerRadian: number };
 
 /**
  * WebGL Earth. Owns the canvas, the render loop and the globe orientation; the parent owns
@@ -137,6 +137,9 @@ export function EarthCanvas(props: EarthCanvasProps) {
     const ray = new Ray();
     const sphere = new Sphere();
     const hitNdc = new Vector3();
+    const grabPoint = new Vector3();
+    const grabLocal = new Vector3();
+    const grabInverse = new Matrix4();
 
     const fitFraming = () => {
       const f = height / 2 / Math.tan((CAMERA_FOV_DEG * DEG) / 2);
@@ -171,6 +174,22 @@ export function EarthCanvas(props: EarthCanvasProps) {
       sphere.center.setFromMatrixPosition(framing.matrixWorld);
       sphere.radius = framing.scale.x;
       return ray.intersectsSphere(sphere);
+    };
+
+    /**
+     * Horizontal screen speed (CSS px per radian of spin) of the surface point under (x, y), so a
+     * drag keeps the grabbed point under the cursor. Falls back to the projected radius, and is
+     * floored so grabbing near the limb (where the surface barely moves sideways) stays controllable.
+     */
+    const grabPxPerRadian = (x: number, y: number) => {
+      const fallback = rPx * framing.scale.x;
+      if (!hitsGlobe(x, y) || !ray.intersectSphere(sphere, grabPoint)) return fallback;
+      orient.updateMatrixWorld(true);
+      grabLocal.copy(grabPoint).applyMatrix4(grabInverse.copy(orient.matrixWorld).invert());
+      const a = projectToCss(grabPoint, camera, width, height).x;
+      const b = projectToCss(grabLocal.applyAxisAngle(Y_AXIS, 0.01).applyMatrix4(orient.matrixWorld), camera, width, height).x;
+      const pxPerRad = (b - a) / 0.01;
+      return Math.max(0.35 * fallback, Math.min(2 * fallback, pxPerRad));
     };
 
     /** Orientation that brings pin `i` to the framing's focus point (refined by projection). */
@@ -392,7 +411,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
           }
           rebaseTween();
           canvas.setPointerCapture(e.pointerId);
-          drag = { kind: "drag", pointerId: e.pointerId, lastX: drag.lastX, lastT: drag.lastT, velocity: 0 };
+          drag = { kind: "drag", pointerId: e.pointerId, lastX: drag.lastX, lastT: drag.lastT, velocity: 0, pxPerRadian: drag.pxPerRadian };
           setCursor("grabbing");
         } else {
           return;
@@ -401,7 +420,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
       if (drag.kind === "drag") {
         if (e.pointerId !== drag.pointerId) return;
         const now = e.timeStamp;
-        const dYaw = dragDeltaYaw(e.clientX - drag.lastX, rPx * framing.scale.x, INTERACTION.dragGain);
+        const dYaw = dragDeltaYaw(e.clientX - drag.lastX, drag.pxPerRadian, INTERACTION.dragGain);
         pendingYaw += dYaw;
         drag.velocity = smoothVelocity(drag.velocity, dYaw, Math.max(0.001, (now - drag.lastT) / 1000), INTERACTION.velocityTau);
         drag.lastX = e.clientX;
@@ -418,7 +437,8 @@ export function EarthCanvas(props: EarthCanvasProps) {
     const onPointerDown = (e: PointerEvent) => {
       if (!ready || !e.isPrimary || e.button !== 0 || drag.kind !== "none") return;
       if (!hitsGlobe(e.offsetX, e.offsetY)) return;
-      drag = { kind: "pending", pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastT: e.timeStamp };
+      const pxPerRadian = grabPxPerRadian(e.offsetX, e.offsetY);
+      drag = { kind: "pending", pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastT: e.timeStamp, pxPerRadian };
     };
 
     const onPointerUp = (e: PointerEvent) => {

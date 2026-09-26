@@ -1,53 +1,115 @@
 {
   "sources": {
-    "day": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-topography/july/world.topo.200407.3x5400x2700.jpg",
+    "albedo": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-base/july/world.200407.3x21600x10800.jpg",
     "night": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg",
-    "clouds": "https://assets.science.nasa.gov/content/dam/science/esd/eo/content-feature/bluemarble/images/cloud_combined_2048.jpg",
+    "clouds": "https://www.solarsystemscope.com/textures/download/8k_earth_clouds.jpg",
     "elevation": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/topography/gebco_08_rev_elev_5400x2700.jpg",
     "bathymetry": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bathymetry/gebco_08_rev_bath_5400x2700.jpg"
   },
   "files": {
-    "earth-day-4k.webp": {
+    "earth-albedo-4k.webp": {
       "size": [
         4096,
         2048
       ],
-      "bytes": 495784
+      "bytes": 606404,
+      "compression": "webp-lossy-q88",
+      "estimatedGpuMiB": 42.7,
+      "colorSpace": "srgb",
+      "content": "surface colour, no baked relief",
+      "source": "albedo"
     },
-    "earth-day-2k.webp": {
+    "earth-albedo-2k.webp": {
       "size": [
         2048,
         1024
       ],
-      "bytes": 137960
+      "bytes": 176326,
+      "compression": "webp-lossy-q88",
+      "estimatedGpuMiB": 10.7,
+      "colorSpace": "srgb",
+      "content": "surface colour, no baked relief",
+      "source": "albedo"
     },
     "earth-night-4k.webp": {
       "size": [
         4096,
         2048
       ],
-      "bytes": 101286
+      "bytes": 101286,
+      "compression": "webp-lossy-q82",
+      "estimatedGpuMiB": 42.7,
+      "colorSpace": "srgb",
+      "content": "city lights only",
+      "source": "night"
     },
     "earth-night-2k.webp": {
       "size": [
         2048,
         1024
       ],
-      "bytes": 24492
+      "bytes": 24492,
+      "compression": "webp-lossy-q82",
+      "estimatedGpuMiB": 10.7,
+      "colorSpace": "srgb",
+      "content": "city lights only",
+      "source": "night"
     },
-    "earth-masks-2k.webp": {
+    "earth-clouds-4k.webp": {
+      "size": [
+        4096,
+        2048
+      ],
+      "bytes": 1841594,
+      "compression": "webp-lossy-q80",
+      "estimatedGpuMiB": 42.7,
+      "colorSpace": "linear-data",
+      "content": "cloud density (single channel)",
+      "source": "clouds",
+      "lossyError": {
+        "meanAbs": 2.735,
+        "p99Abs": 11.0
+      }
+    },
+    "earth-clouds-2k.webp": {
       "size": [
         2048,
         1024
       ],
-      "bytes": 410822
+      "bytes": 471828,
+      "compression": "webp-lossy-q80",
+      "estimatedGpuMiB": 10.7,
+      "colorSpace": "linear-data",
+      "content": "cloud density (single channel)",
+      "source": "clouds",
+      "lossyError": {
+        "meanAbs": 2.741,
+        "p99Abs": 11.0
+      }
     },
-    "earth-normal-2k.webp": {
+    "earth-relief-4k.webp": {
+      "size": [
+        4096,
+        2048
+      ],
+      "bytes": 1221418,
+      "compression": "webp-lossless",
+      "estimatedGpuMiB": 42.7,
+      "colorSpace": "linear-data",
+      "content": "R elevation 0-6400 m, G water mask",
+      "source": "elevation+bathymetry"
+    },
+    "earth-relief-2k.webp": {
       "size": [
         2048,
         1024
       ],
-      "bytes": 105676
+      "bytes": 386994,
+      "compression": "webp-lossless",
+      "estimatedGpuMiB": 10.7,
+      "colorSpace": "linear-data",
+      "content": "R elevation 0-6400 m, G water mask",
+      "source": "elevation+bathymetry"
     }
   }
 }

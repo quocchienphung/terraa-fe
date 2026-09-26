@@ -79,9 +79,12 @@ export function releaseVelocity(smoothed: number, msSinceLastMove: number, stale
   return Math.max(-maxOmega, Math.min(maxOmega, smoothed));
 }
 
-/** Yaw change for a horizontal pointer delta, from CSS px and the projected globe radius. */
-export function dragDeltaYaw(dxCss: number, globeRadiusCss: number, gain: number): number {
-  return globeRadiusCss > 0 ? (dxCss / globeRadiusCss) * gain : 0;
+/**
+ * Yaw change for a horizontal pointer delta in CSS px, given how many CSS px the grabbed surface
+ * point moves per radian of spin (≈ the projected globe radius near the centre).
+ */
+export function dragDeltaYaw(dxCss: number, pxPerRadian: number, gain: number): number {
+  return pxPerRadian > 0 ? (dxCss / pxPerRadian) * gain : 0;
 }
 
 /**
