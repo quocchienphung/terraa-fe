@@ -18,15 +18,6 @@ export function spinToFaceLongitude(lon: number): number {
   return -Math.atan2(v.x, v.z);
 }
 
-/** Signed smallest rotation from `from` to `to` (radians), in (−π, π]. */
-export function shortestAngleDelta(from: number, to: number): number {
-  const twoPi = Math.PI * 2;
-  let d = (to - from) % twoPi;
-  if (d > Math.PI) d -= twoPi;
-  if (d <= -Math.PI) d += twoPi;
-  return d;
-}
-
 /**
  * Cosine between the surface normal at `point` and the direction to the camera.
  * > 0 means the point is on the hemisphere the (perspective) camera can see — exact for a

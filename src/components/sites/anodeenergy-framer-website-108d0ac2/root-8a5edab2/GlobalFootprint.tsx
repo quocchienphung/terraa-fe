@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { MAP, MAP_LOCATIONS } from "@/lib/constants";
 import type { MarkerKind } from "@/types/anode";
@@ -28,17 +28,6 @@ const MD = 768;
 
 type Stage = "poster" | "loading" | "ready" | "failed";
 
-const FINE_POINTER = "(hover: hover) and (pointer: fine)";
-const subscribeFinePointer = (onChange: () => void) => {
-  const mql = window.matchMedia(FINE_POINTER);
-  mql.addEventListener("change", onChange);
-  return () => mql.removeEventListener("change", onChange);
-};
-/** Hover steering needs a mouse/trackpad; the hint is only shown where it works. */
-function useFinePointer(): boolean {
-  return useSyncExternalStore(subscribeFinePointer, () => window.matchMedia(FINE_POINTER).matches, () => false);
-}
-
 /**
  * "Where We Operate": a WebGL Earth (NASA imagery) with pins at real coordinates.
  * The poster renders from SSR and stays as the fallback. The selected location is kept
@@ -46,7 +35,6 @@ function useFinePointer(): boolean {
  */
 export function GlobalFootprint() {
   const reduced = useReducedMotion();
-  const finePointer = useFinePointer();
   const [active, setActive] = useState<number>(MAP.initialIndex);
   const [stage, setStage] = useState<Stage>("poster");
   const [userPaused, setUserPaused] = useState(false);
@@ -244,8 +232,9 @@ export function GlobalFootprint() {
           onReady={() => setStage("ready")}
           onError={() => setStage("failed")}
           className={cn(
-            // Receives steering/drag input; pan-y keeps vertical touch scrolling native.
-            "absolute inset-0 block h-full w-full touch-pan-y transition-opacity duration-[350ms] ease-cta",
+            // Display only: drag input goes to EarthCanvas's globe-shaped drag area, so touches
+            // elsewhere in the section keep native scrolling.
+            "pointer-events-none absolute inset-0 block h-full w-full transition-opacity duration-[350ms] ease-cta",
             ready ? "opacity-100" : "opacity-0",
           )}
         />
@@ -310,7 +299,7 @@ export function GlobalFootprint() {
         </div>
       </div>
 
-      {/* The bar spans the full width: only its controls take pointer input, the rest lets the globe steer. */}
+      {/* The bar spans the full width: only its controls take pointer input, the rest passes through to the globe. */}
       <div className="pointer-events-none absolute inset-x-4 bottom-4 z-[3] flex flex-wrap items-end justify-between gap-4 md:inset-x-14 md:bottom-6">
         <div className="flex flex-wrap gap-[18px]">
           {(Object.keys(MAP.kinds) as MarkerKind[]).map((kind) => (
@@ -320,11 +309,6 @@ export function GlobalFootprint() {
             </span>
           ))}
         </div>
-        {ready && finePointer ? (
-          <p className="hidden font-mono text-[9.5px] uppercase tracking-[0.57px] text-white/[0.5] desk:block">
-            {reduced ? "Drag to explore" : "Move left or right to steer · Drag to explore"}
-          </p>
-        ) : null}
         <div {...holdHandlers} className="pointer-events-auto flex items-center gap-2 font-mono text-[9.5px] tracking-[0.57px] text-white/[0.72]">
           <button
             type="button"

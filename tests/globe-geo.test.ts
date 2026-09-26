@@ -6,7 +6,6 @@ import {
   latLonToVector3,
   limbOpacity,
   projectToCss,
-  shortestAngleDelta,
   spinToFaceLongitude,
 } from "../src/components/sites/anodeenergy-framer-website-108d0ac2/root-8a5edab2/globe/project-markers.ts";
 
@@ -62,12 +61,6 @@ test("east appears to the right of the facing longitude", () => {
   const spin = spinToFaceLongitude(-97);
   const eastOf = latLonToVector3(0, -90).applyAxisAngle(new Vector3(0, 1, 0), spin);
   assert.ok(eastOf.x > 0);
-});
-
-test("shortestAngleDelta crosses ±π the short way", () => {
-  close(shortestAngleDelta(0.1, Math.PI * 2 - 0.1), -0.2);
-  close(shortestAngleDelta(Math.PI * 2 - 0.1, 0.1 + Math.PI * 4), 0.2);
-  close(shortestAngleDelta(0, Math.PI), Math.PI);
 });
 
 test("perspective occlusion hides points a z-based test would wrongly show", () => {

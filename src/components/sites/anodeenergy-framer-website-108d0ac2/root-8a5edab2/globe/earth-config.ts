@@ -56,33 +56,38 @@ export const ORIENTATION = {
   periodSeconds: 150,
   /** Delay before auto-rotation resumes after pointer/focus leaves the UI. */
   resumeDelayMs: 1500,
-  /** Focus tween duration and the time constant for easing tilt back to the default. */
+  /** Focus tween duration (a slerp from the orientation on screen to the location's north-up view). */
   focusMs: 1000,
-  tiltReturnTau: 1.6,
 } as const;
 
 /**
- * Pointer steering, drag and release inertia (proposed values, tuned in the browser).
- * Angular velocities are rad/s; positive moves the visible surface to the viewer's right.
+ * Press-and-drag trackball and release inertia (proposed values, tuned in the browser).
+ * Angular velocities are rad/s. Idle rotation turns about the Earth's own polar axis.
  */
 export const INTERACTION = {
-  steering: { deadZone: 0.12, leftGain: 7, rightGain: 5 },
-  /** Exponential time constants (s): towards a steering target, back to idle, UI hold, Pause, after a fling. */
-  tauSteer: 0.24,
+  /** Exponential time constants (s): back to idle, grab / UI hold, Pause, after a fling. */
   tauIdle: 0.45,
   tauHold: 0.08,
   tauPause: 0.12,
   tauInertia: 0.25,
   /** Release inertia window (s) during which tauInertia applies. */
   inertiaSeconds: 0.7,
-  /** Pointer travel (CSS px) before a press becomes a drag. */
+  /** Pointer travel (CSS px) before a press becomes a drag; less is a tap. */
   dragThresholdPx: 5,
-  /** Yaw per CSS px = gain / (screen px per radian at the grabbed point): 1 keeps that point under the cursor. */
-  dragGain: 1,
+  /**
+   * Screen px per radian at the grabbed point (so it keeps pace with the pointer), bounded to
+   * [min, max] × the projected radius: near the limb the surface barely moves on screen.
+   */
+  grip: { min: 0.35, max: 2 },
   /** Smoothing of the drag velocity estimate (s), the age after which a release counts as "stopped" (ms), and the fling cap (rad/s). */
   velocityTau: 0.05,
   releaseStaleMs: 90,
   maxFlingOmega: 3,
+  /**
+   * Touch devices: strips at the left/right edges of the section (CSS px) where a gesture that
+   * lands on the globe still scrolls the page instead of turning it.
+   */
+  touchScrollGutter: { fraction: 0.16, minPx: 40, maxPx: 96 },
 } as const;
 
 /**

@@ -1,12 +1,26 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Euler, Matrix4, Quaternion, Ray, Sphere, Vector3 } from "three";
+import { Matrix4, Quaternion, Vector3 } from "three";
 import type { GeoPoint } from "@/types/anode";
 import { CAMERA_FOV_DEG, CLOUDS, ENTRY, INTERACTION, ORIENTATION, pickFraming, pickTier } from "./earth-config";
 import { createEarthScene, type EarthScene } from "./create-earth-scene";
-import { facingCamera, latLonToVector3, limbOpacity, projectToCss, shortestAngleDelta, spinToFaceLongitude } from "./project-markers";
-import { damp, dragDeltaYaw, normalisedSteerX, releaseVelocity, rotationTarget, smoothVelocity, type RotationTuning } from "./rotation-input";
+import { facingCamera, latLonToVector3, limbOpacity, projectToCss, spinToFaceLongitude } from "./project-markers";
+import { releaseSpeed, rotationTarget, type RotationTuning } from "./rotation-input";
+import {
+  applyFraming,
+  framingPose,
+  orientationQuaternion,
+  polarAxis,
+  rollRotation,
+  silhouetteEllipse,
+  smoothAngularVelocity,
+  stepSpin,
+  worldToLocalDirection,
+  type FramingPose,
+  type ScreenEllipse,
+  type SphereOnScreen,
+} from "./trackball";
 
 export interface ProjectedMarker {
   x: number;
@@ -23,7 +37,7 @@ export interface FocusRequest {
 interface EarthCanvasProps {
   markers: (GeoPoint | null)[];
   focus: FocusRequest | null;
-  /** Explicit Pause button: surface and clouds stop; hover never restarts it. */
+  /** Explicit Pause button: surface and clouds stop; dragging still works, hover never restarts it. */
   paused: boolean;
   /** Pointer/keyboard focus on a pin, card or control: the surface stops so it can be read. */
   held: boolean;
@@ -36,15 +50,12 @@ interface EarthCanvasProps {
 }
 
 const DEG = Math.PI / 180;
-const X_AXIS = new Vector3(1, 0, 0);
-const Y_AXIS = new Vector3(0, 1, 0);
 const ORIGIN = new Vector3();
 const TWO_PI = Math.PI * 2;
+const COARSE_POINTER = "(pointer: coarse)";
 
 const TUNING: RotationTuning = {
   baseOmega: TWO_PI / ORIENTATION.periodSeconds,
-  steering: INTERACTION.steering,
-  tauSteer: INTERACTION.tauSteer,
   tauIdle: INTERACTION.tauIdle,
   tauHold: INTERACTION.tauHold,
   tauPause: INTERACTION.tauPause,
@@ -52,30 +63,32 @@ const TUNING: RotationTuning = {
 };
 const CLOUD_OMEGA = TWO_PI / CLOUDS.relativePeriodSeconds;
 
-function orientationQuaternion(tilt: number, spin: number, target = new Quaternion()): Quaternion {
-  const qy = new Quaternion().setFromAxisAngle(Y_AXIS, spin);
-  return target.setFromAxisAngle(X_AXIS, tilt).multiply(qy);
-}
-
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type DragState =
   | { kind: "none" }
-  | { kind: "pending"; pointerId: number; startX: number; startY: number; lastX: number; lastT: number; pxPerRadian: number }
-  | { kind: "drag"; pointerId: number; lastX: number; lastT: number; velocity: number; pxPerRadian: number };
+  /** Pressed on the globe, not yet past the drag threshold: a tap if released now. */
+  | { kind: "pending"; pointerId: number; startX: number; startY: number; lastT: number }
+  | { kind: "drag"; pointerId: number; lastX: number; lastY: number; lastT: number };
 
 /**
- * WebGL Earth. Owns the canvas, the render loop and the globe orientation; the parent owns
- * all DOM (title, pins, card, controls) and receives projected pin positions every rendered
- * frame through `onProject` (no React state per frame).
+ * WebGL Earth. Owns the canvas, the drag area, the render loop and the globe orientation; the
+ * parent owns all other DOM (title, pins, card, controls) and receives projected pin positions
+ * every rendered frame through `onProject` (no React state per frame).
  *
- * Orientation has one writer — the frame loop. Pointer events only record input (steering
- * position, drag deltas); the loop turns them into yaw. Priority per frame:
- * focus tween > drag > (pause | reduced motion | UI hold | inertia | steering | idle).
+ * Orientation is one quaternion `q` (globe in the framing frame), written only by the frame loop
+ * and copied to the scene there. Pointer events record drag rotations into `pending`; the loop
+ * applies them. Per frame: pending drag > focus tween > (drag holds still | spin with `omega`).
+ *
+ * Input goes to a separate drag area shaped like the globe's projected silhouette (`touch-action:
+ * none`), not to the canvas, so the browser knows before a touch starts whether it turns the globe
+ * or scrolls the page. On touch devices it stops short of the section's side edges (scroll gutters).
  */
 export function EarthCanvas(props: EarthCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hitRef = useRef<HTMLDivElement>(null);
   const propsRef = useRef(props);
   const wakeRef = useRef<() => void>(() => {});
 
@@ -86,8 +99,9 @@ export function EarthCanvas(props: EarthCanvasProps) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    const hit = hitRef.current;
     const section = canvas?.parentElement;
-    if (!canvas || !section) return;
+    if (!canvas || !hit || !section) return;
 
     let earth: EarthScene;
     try {
@@ -104,53 +118,55 @@ export function EarthCanvas(props: EarthCanvasProps) {
     let last = 0;
     let visible = false;
     let dirty = true;
+    let hitDirty = true;
+    let hitKey = "";
     let width = 0;
     let height = 0;
-    let rPx = 0;
-    let topPx = 0;
+    let pose: FramingPose = { radiusPx: 0, topPx: 0, distance: 1, pitch: 0 };
+    const view: SphereOnScreen = { camera, width: 0, height: 0, center: new Vector3(), radius: 1 };
+    const silhouette: ScreenEllipse = { cx: 0, cy: 0, rx: 0, ry: 0 };
+    const coarse = window.matchMedia(COARSE_POINTER);
 
-    // Orientation state (written only in `frame`).
-    let spin = spinToFaceLongitude(ORIENTATION.initialLon);
-    const defaultTilt = ORIENTATION.axisLat * DEG;
-    let tilt = defaultTilt;
-    /** The focus tilt is kept until the focused pin rotates behind the limb. */
-    let holdTilt = false;
-    let focusedPin = -1;
-    let focusedPinVisible = false;
-    /** Signed surface angular velocity (rad/s). Starts at idle so the first frames already turn. */
-    let omega = propsRef.current.paused || propsRef.current.reducedMotion ? 0 : TUNING.baseOmega;
+    // Orientation state (applied to the scene only in `frame`).
+    const q = orientationQuaternion(ORIENTATION.axisLat * DEG, spinToFaceLongitude(ORIENTATION.initialLon));
+    /** Angular velocity (rad/s, axis × speed, framing frame): idle spin, fling inertia or zero. */
+    const omega = new Vector3();
+    const spinTarget = new Vector3();
     let inertiaLeft = 0;
+    let tween: { from: Quaternion; to: Quaternion; start: number } | null = null;
     /** Cloud shell yaw relative to the surface: its own clock. */
     let cloudYaw = 0;
     let entry = propsRef.current.reducedMotion ? 1 : 0;
     let lastFocusSeq = propsRef.current.focus?.seq ?? -1;
-    let tween: { from: Quaternion; to: Quaternion; start: number; spin: number; tilt: number } | null = null;
 
     // Input state (written by events, consumed by `frame`).
-    let steerX: number | null = null;
     let drag: DragState = { kind: "none" };
-    let pendingYaw = 0;
+    const pending = new Quaternion();
+    let hasPending = false;
+    const dragVelocity = new Vector3();
+    const stepAxis = new Vector3();
+    const stepRotation = new Vector3();
+    const stepQuat = new Quaternion();
 
     const localPins = propsRef.current.markers.map((g) => (g ? latLonToVector3(g.lat, g.lon, 1) : null));
     const world = new Vector3();
     const center = new Vector3();
-    const ray = new Ray();
-    const sphere = new Sphere();
-    const hitNdc = new Vector3();
-    const grabPoint = new Vector3();
-    const grabLocal = new Vector3();
-    const grabInverse = new Matrix4();
+    const focusMatrix = new Matrix4();
 
-    const fitFraming = () => {
-      const f = height / 2 / Math.tan((CAMERA_FOV_DEG * DEG) / 2);
-      const cfg = pickFraming(width);
-      rPx = Math.min((cfg.diameter * width) / 2, cfg.maxRadiusOfHeight * height);
-      topPx = cfg.top * height;
-      const alpha = Math.atan(rPx / f);
-      const distance = 1 / Math.sin(alpha);
-      const thetaCenter = Math.atan((height / 2 - topPx) / f) - alpha;
-      framing.position.set(0, distance * Math.sin(thetaCenter), -distance * Math.cos(thetaCenter));
-      framing.rotation.x = thetaCenter;
+    const idleOmega = () => {
+      const p = propsRef.current;
+      if (p.paused || p.reducedMotion || p.held) omega.set(0, 0, 0);
+      else polarAxis(q, omega).multiplyScalar(TUNING.baseOmega);
+    };
+    idleOmega();
+
+    /** Sphere centre/radius as the pointer sees it; call after the framing or entry changes. */
+    const syncView = () => {
+      framing.updateMatrixWorld(true);
+      view.center.setFromMatrixPosition(framing.matrixWorld);
+      view.radius = framing.scale.x;
+      view.width = width;
+      view.height = height;
     };
 
     const resize = () => {
@@ -160,81 +176,78 @@ export function EarthCanvas(props: EarthCanvasProps) {
       width = w;
       height = h;
       earth.setSize(w, h);
-      fitFraming();
+      pose = framingPose(w, h, CAMERA_FOV_DEG, pickFraming(w));
+      applyFraming(framing, pose);
+      syncView();
       dirty = true;
+      hitDirty = true;
     };
 
-    /** Cheap ray–sphere test against the globe for a point in canvas CSS px (no scene raycast). */
-    const hitsGlobe = (x: number, y: number) => {
-      if (!width || !height) return false;
-      hitNdc.set((x / width) * 2 - 1, 1 - (y / height) * 2, 0.5).unproject(camera);
-      ray.origin.set(0, 0, 0);
-      ray.direction.copy(hitNdc).normalize();
-      framing.updateMatrixWorld(true);
-      sphere.center.setFromMatrixPosition(framing.matrixWorld);
-      sphere.radius = framing.scale.x;
-      return ray.intersectsSphere(sphere);
+    /** Fits the drag area to the projected silhouette (minus touch scroll gutters). */
+    const layoutHitArea = () => {
+      hitDirty = false;
+      let key = "none";
+      let left = 0;
+      let top = 0;
+      let right = 0;
+      let bottom = 0;
+      if (ready && width && height && silhouetteEllipse(view, silhouette)) {
+        const g = INTERACTION.touchScrollGutter;
+        const gutter = coarse.matches ? clamp(g.fraction * width, g.minPx, g.maxPx) : 0;
+        left = Math.max(gutter, silhouette.cx - silhouette.rx);
+        right = Math.min(width - gutter, silhouette.cx + silhouette.rx);
+        top = Math.max(0, silhouette.cy - silhouette.ry);
+        bottom = Math.min(height, silhouette.cy + silhouette.ry);
+        if (right - left >= 1 && bottom - top >= 1) {
+          key = [left, top, right, bottom, silhouette.cx, silhouette.cy, silhouette.rx, silhouette.ry].map((v) => v.toFixed(1)).join(",");
+        }
+      }
+      if (key === hitKey) return;
+      hitKey = key;
+      if (key === "none") {
+        hit.style.display = "none";
+        return;
+      }
+      const s = hit.style;
+      s.display = "block";
+      s.left = `${left.toFixed(1)}px`;
+      s.top = `${top.toFixed(1)}px`;
+      s.width = `${(right - left).toFixed(1)}px`;
+      s.height = `${(bottom - top).toFixed(1)}px`;
+      s.clipPath = `ellipse(${silhouette.rx.toFixed(1)}px ${silhouette.ry.toFixed(1)}px at ${(silhouette.cx - left).toFixed(1)}px ${(silhouette.cy - top).toFixed(1)}px)`;
     };
 
-    /**
-     * Horizontal screen speed (CSS px per radian of spin) of the surface point under (x, y), so a
-     * drag keeps the grabbed point under the cursor. Falls back to the projected radius, and is
-     * floored so grabbing near the limb (where the surface barely moves sideways) stays controllable.
-     */
-    const grabPxPerRadian = (x: number, y: number) => {
-      const fallback = rPx * framing.scale.x;
-      if (!hitsGlobe(x, y) || !ray.intersectSphere(sphere, grabPoint)) return fallback;
-      orient.updateMatrixWorld(true);
-      grabLocal.copy(grabPoint).applyMatrix4(grabInverse.copy(orient.matrixWorld).invert());
-      const a = projectToCss(grabPoint, camera, width, height).x;
-      const b = projectToCss(grabLocal.applyAxisAngle(Y_AXIS, 0.01).applyMatrix4(orient.matrixWorld), camera, width, height).x;
-      const pxPerRad = (b - a) / 0.01;
-      return Math.max(0.35 * fallback, Math.min(2 * fallback, pxPerRad));
-    };
-
-    /** Orientation that brings pin `i` to the framing's focus point (refined by projection). */
-    const solveFocus = (i: number): { tilt: number; spin: number } | null => {
+    /** North-up orientation that brings pin `i` to the framing's focus point (refined by projection). */
+    const solveFocus = (i: number): Quaternion | null => {
       const geo = propsRef.current.markers[i];
       const local = localPins[i];
       if (!geo || !local) return null;
       const cfg = pickFraming(width);
       const targetX = cfg.focusX * width;
       const targetY = cfg.focusY * height;
-      const centerY = topPx + rPx;
-      const elevation = Math.asin(Math.max(-0.95, Math.min(0.95, (centerY - targetY) / rPx)));
-      let t = Math.max(-75 * DEG, Math.min(60 * DEG, geo.lat * DEG - elevation));
-      let s = spinToFaceLongitude(geo.lon) + Math.asin(Math.max(-0.9, Math.min(0.9, (targetX - width / 2) / (rPx * Math.cos(elevation)))));
-      const q = new Quaternion();
-      const m = new Matrix4();
+      const rPx = pose.radiusPx;
+      const elevation = Math.asin(clamp((pose.topPx + rPx - targetY) / rPx, -0.95, 0.95));
+      let t = clamp(geo.lat * DEG - elevation, -75 * DEG, 60 * DEG);
+      let s = spinToFaceLongitude(geo.lon) + Math.asin(clamp((targetX - width / 2) / (rPx * Math.cos(elevation)), -0.9, 0.9));
+      const target = new Quaternion();
       framing.updateMatrixWorld(true);
       for (let k = 0; k < 4; k++) {
-        m.makeRotationFromQuaternion(orientationQuaternion(t, s, q)).premultiply(framing.matrixWorld);
-        const p = projectToCss(world.copy(local).applyMatrix4(m), camera, width, height);
+        focusMatrix.makeRotationFromQuaternion(orientationQuaternion(t, s, target)).premultiply(framing.matrixWorld);
+        const p = projectToCss(world.copy(local).applyMatrix4(focusMatrix), camera, width, height);
         s += ((targetX - p.x) / rPx) * 0.9;
-        t += ((targetY - p.y) / rPx) * 0.9;
-        t = Math.max(-75 * DEG, Math.min(60 * DEG, t));
+        t = clamp(t + ((targetY - p.y) / rPx) * 0.9, -75 * DEG, 60 * DEG);
       }
-      return { tilt: t, spin: spin + shortestAngleDelta(spin, s) };
-    };
-
-    /** A drag interrupts a focus tween: continue from the orientation currently on screen. */
-    const rebaseTween = () => {
-      if (!tween) return;
-      const e = new Euler().setFromQuaternion(orient.quaternion, "XYZ");
-      tilt = e.x;
-      spin += shortestAngleDelta(spin, e.y);
-      tween = null;
+      return orientationQuaternion(t, s, target);
     };
 
     const project = () => {
       orient.updateMatrixWorld(true);
       center.setFromMatrixPosition(orient.matrixWorld);
-      const points = localPins.map((local, i) => {
+      const points = localPins.map((local) => {
         if (!local) return null;
         world.copy(local).applyMatrix4(orient.matrixWorld);
         const p = projectToCss(world, camera, width, height);
         const opacity = p.inFrustum ? limbOpacity(facingCamera(world, center, ORIGIN)) : 0;
-        if (i === focusedPin) focusedPinVisible = opacity > 0;
         return { x: p.x, y: p.y, opacity };
       });
       propsRef.current.onProject(points, width, height);
@@ -253,6 +266,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
       const offset = (1 - entry) * ENTRY.fromOffsetPx;
       if (offset > 0.05) camera.setViewOffset(width, height, 0, -offset, width, height);
       else camera.clearViewOffset();
+      syncView();
     };
 
     const frame = (now: number) => {
@@ -263,68 +277,50 @@ export function EarthCanvas(props: EarthCanvasProps) {
       last = now;
       const p = propsRef.current;
 
+      // Drag steps recorded since the last frame (also the tail of a drag released in between).
+      if (hasPending) {
+        q.premultiply(pending).normalize();
+        pending.identity();
+        hasPending = false;
+        dirty = true;
+      }
+
       // Focus requests from the parent (selection). An explicit selection runs even when paused.
       if (p.focus && p.focus.seq !== lastFocusSeq) {
         lastFocusSeq = p.focus.seq;
         const target = solveFocus(p.focus.index);
         if (target) {
-          holdTilt = true;
-          focusedPin = p.focus.index;
-          if (drag.kind === "drag") drag = { kind: "none" };
+          if (drag.kind !== "none") endDrag(null);
+          omega.set(0, 0, 0);
+          inertiaLeft = 0;
           if (p.reducedMotion) {
-            spin = target.spin;
-            tilt = target.tilt;
+            q.copy(target);
             tween = null;
           } else {
-            tween = { from: orient.quaternion.clone(), to: orientationQuaternion(target.tilt, target.spin), start: now, ...target };
+            tween = { from: q.clone(), to: target, start: now };
           }
           dirty = true;
         }
       }
 
-      const dragging = drag.kind === "drag";
+      let target = { speed: 0, tau: 0 };
       if (tween) {
         const t = Math.min(1, (now - tween.start) / ORIENTATION.focusMs);
-        orient.quaternion.slerpQuaternions(tween.from, tween.to, easeInOutCubic(t));
-        if (t >= 1) {
-          spin = tween.spin;
-          tilt = tween.tilt;
-          tween = null;
-        }
-        omega = 0;
-        inertiaLeft = 0;
-        pendingYaw = 0;
+        q.slerpQuaternions(tween.from, tween.to, easeInOutCubic(t));
+        if (t >= 1) tween = null;
         dirty = true;
-      } else {
-        if (dragging) {
-          // Direct manipulation: the pointer owns yaw; omega mirrors the drag velocity so a
-          // release continues smoothly.
-          spin += pendingYaw;
-          if (pendingYaw !== 0) dirty = true;
-          pendingYaw = 0;
-          omega = drag.kind === "drag" ? drag.velocity : omega;
-        } else {
-          inertiaLeft = Math.max(0, inertiaLeft - dt);
-          const target = rotationTarget(
-            { paused: p.paused, held: p.held, reducedMotion: p.reducedMotion, steerX: p.reducedMotion ? null : steerX, inertiaLeft },
-            TUNING,
-          );
-          omega = damp(omega, target.omega, dt, target.tau);
-          if (Math.abs(omega - target.omega) < 1e-5) omega = target.omega;
-          spin += omega * dt;
-          if (omega !== 0) dirty = true;
-        }
-        const activity = dragging ? 1 : Math.min(1, Math.abs(omega) / TUNING.baseOmega);
-        if (activity > 0 && holdTilt && !focusedPinVisible) holdTilt = false;
-        // The tilt only drifts back while the globe turns, so a pause freezes it completely.
-        if (!holdTilt && activity > 0 && Math.abs(tilt - defaultTilt) > 1e-4) {
-          tilt += (defaultTilt - tilt) * (1 - Math.exp(-(dt * activity) / ORIENTATION.tiltReturnTau));
-          dirty = true;
-        }
-        orientationQuaternion(tilt, spin, orient.quaternion);
+      } else if (drag.kind !== "drag") {
+        inertiaLeft = Math.max(0, inertiaLeft - dt);
+        target = rotationTarget(
+          { paused: p.paused, held: p.held, grabbed: drag.kind === "pending", reducedMotion: p.reducedMotion, inertiaLeft },
+          TUNING,
+        );
+        polarAxis(q, spinTarget).multiplyScalar(target.speed);
+        if (stepSpin(q, omega, spinTarget, dt, target.tau)) dirty = true;
       }
+      orient.quaternion.copy(q);
 
-      // Weather clock: independent of the surface (held, reversed or dragged), stopped by Pause.
+      // Weather clock: independent of the surface (held or dragged), stopped by Pause.
       const cloudsDrift = !p.paused && !p.reducedMotion;
       if (cloudsDrift) {
         cloudYaw = (cloudYaw + CLOUD_OMEGA * dt) % TWO_PI;
@@ -336,6 +332,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
       if (Math.abs(nextEntry - entry) > 1e-4) {
         entry = nextEntry;
         dirty = true;
+        hitDirty = true;
       }
       if (dirty) {
         applyEntry();
@@ -343,10 +340,8 @@ export function EarthCanvas(props: EarthCanvasProps) {
         project();
         dirty = false;
       }
-      const busy = tween !== null || dragging || omega !== 0 || cloudsDrift || rotationTarget(
-        { paused: p.paused, held: p.held, reducedMotion: p.reducedMotion, steerX, inertiaLeft },
-        TUNING,
-      ).omega !== 0;
+      if (hitDirty) layoutHitArea();
+      const busy = tween !== null || hasPending || cloudsDrift || target.speed !== 0 || omega.lengthSq() > 0;
       // Sleep when nothing moves; props, pointer, scroll, resize and visibility changes wake the loop.
       if (busy) schedule();
     };
@@ -364,116 +359,102 @@ export function EarthCanvas(props: EarthCanvasProps) {
     };
     wakeRef.current = wake;
 
-    // ---- Pointer input -------------------------------------------------------------------
-    const setCursor = (c: string) => {
-      if (canvas.style.cursor !== c) canvas.style.cursor = c;
-    };
-
+    // ---- Pointer input (drag area only) ----------------------------------------------------
+    /** Ends the press/drag. `releaseAt` (event time) hands the recent drag velocity to inertia; null drops it. */
     const endDrag = (releaseAt: number | null) => {
+      if (drag.kind === "none") return;
+      const id = drag.pointerId;
       if (drag.kind === "drag") {
-        if (canvas.hasPointerCapture(drag.pointerId)) canvas.releasePointerCapture(drag.pointerId);
         const p = propsRef.current;
-        const v = releaseAt === null ? 0 : releaseVelocity(drag.velocity, releaseAt - drag.lastT, INTERACTION.releaseStaleMs, INTERACTION.maxFlingOmega);
-        // Pause and reduced motion: a drag is a direct edit only — no inertia, no resume.
-        omega = p.paused || p.reducedMotion ? 0 : v;
-        inertiaLeft = p.paused || p.reducedMotion ? 0 : INTERACTION.inertiaSeconds;
+        const speed =
+          releaseAt === null
+            ? 0
+            : releaseSpeed(
+                { speed: dragVelocity.length(), msSinceLastMove: releaseAt - drag.lastT, paused: p.paused, reducedMotion: p.reducedMotion },
+                INTERACTION.releaseStaleMs,
+                INTERACTION.maxFlingOmega,
+              );
+        if (speed > 0) omega.copy(dragVelocity).setLength(speed);
+        else omega.set(0, 0, 0);
+        inertiaLeft = speed > 0 ? INTERACTION.inertiaSeconds : 0;
       }
       drag = { kind: "none" };
-      setCursor("");
+      dragVelocity.set(0, 0, 0);
+      if (hit.hasPointerCapture(id)) hit.releasePointerCapture(id);
+      delete hit.dataset.dragging;
       wake();
     };
 
-    const clearInput = () => {
-      steerX = null;
-      if (drag.kind !== "none") endDrag(null);
-      setCursor("");
-    };
-
-    const updateSteer = (e: PointerEvent) => {
-      if (e.pointerType === "touch" || !ready) {
-        steerX = null;
-        return;
+    /** Records one pointer step (client px) as a rotation for the next frame, and its velocity. */
+    const addStep = (x0: number, y0: number, x1: number, y1: number, dtSeconds: number) => {
+      const rect = canvas.getBoundingClientRect();
+      const angle = rollRotation(view, x0 - rect.left, y0 - rect.top, x1 - rect.left, y1 - rect.top, INTERACTION.grip, stepAxis);
+      if (angle > 0) {
+        worldToLocalDirection(framing, stepAxis, stepAxis);
+        pending.premultiply(stepQuat.setFromAxisAngle(stepAxis, angle));
+        hasPending = true;
+        stepRotation.copy(stepAxis).multiplyScalar(angle);
+      } else {
+        stepRotation.set(0, 0, 0);
       }
-      const over = hitsGlobe(e.offsetX, e.offsetY);
-      steerX = over ? normalisedSteerX(e.offsetX, width, rPx * framing.scale.x) : null;
-      setCursor(over ? "grab" : "");
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-      if (drag.kind === "pending" && e.pointerId === drag.pointerId) {
-        const dx = e.clientX - drag.startX;
-        const dy = e.clientY - drag.startY;
-        if (Math.hypot(dx, dy) >= INTERACTION.dragThresholdPx) {
-          // Touch: only horizontal gestures rotate; vertical ones stay page scroll (touch-action: pan-y).
-          if (e.pointerType === "touch" && Math.abs(dy) > Math.abs(dx)) {
-            drag = { kind: "none" };
-            return;
-          }
-          rebaseTween();
-          canvas.setPointerCapture(e.pointerId);
-          drag = { kind: "drag", pointerId: e.pointerId, lastX: drag.lastX, lastT: drag.lastT, velocity: 0, pxPerRadian: drag.pxPerRadian };
-          setCursor("grabbing");
-        } else {
-          return;
-        }
-      }
-      if (drag.kind === "drag") {
-        if (e.pointerId !== drag.pointerId) return;
-        const now = e.timeStamp;
-        const dYaw = dragDeltaYaw(e.clientX - drag.lastX, drag.pxPerRadian, INTERACTION.dragGain);
-        pendingYaw += dYaw;
-        drag.velocity = smoothVelocity(drag.velocity, dYaw, Math.max(0.001, (now - drag.lastT) / 1000), INTERACTION.velocityTau);
-        drag.lastX = e.clientX;
-        drag.lastT = now;
-        wake();
-        return;
-      }
-      if (e.buttons === 0) {
-        updateSteer(e);
-        wake();
-      }
+      smoothAngularVelocity(dragVelocity, stepRotation, dtSeconds, INTERACTION.velocityTau);
     };
 
     const onPointerDown = (e: PointerEvent) => {
       if (!ready || !e.isPrimary || e.button !== 0 || drag.kind !== "none") return;
-      if (!hitsGlobe(e.offsetX, e.offsetY)) return;
-      const pxPerRadian = grabPxPerRadian(e.offsetX, e.offsetY);
-      drag = { kind: "pending", pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastT: e.timeStamp, pxPerRadian };
+      hit.setPointerCapture(e.pointerId);
+      // Grabbing the globe holds it: stop the spin, a fling and a focus tween where they are.
+      tween = null;
+      omega.set(0, 0, 0);
+      inertiaLeft = 0;
+      drag = { kind: "pending", pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, lastT: e.timeStamp };
+      hit.dataset.dragging = "true";
+      wake();
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (drag.kind === "none" || e.pointerId !== drag.pointerId) return;
+      if (e.pointerType === "mouse" && (e.buttons & 1) === 0) {
+        endDrag(null); // the button was released where we could not see it
+        return;
+      }
+      if (drag.kind === "pending") {
+        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < INTERACTION.dragThresholdPx) return;
+        drag = { kind: "drag", pointerId: drag.pointerId, lastX: drag.startX, lastY: drag.startY, lastT: drag.lastT };
+      }
+      addStep(drag.lastX, drag.lastY, e.clientX, e.clientY, Math.max(0.001, (e.timeStamp - drag.lastT) / 1000));
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+      drag.lastT = e.timeStamp;
+      wake();
     };
 
     const onPointerUp = (e: PointerEvent) => {
-      if (drag.kind === "none" || e.pointerId !== drag.pointerId) return;
-      if (drag.kind === "pending") {
-        drag = { kind: "none" };
-        return;
-      }
-      endDrag(e.timeStamp);
-      updateSteer(e);
+      if (drag.kind !== "none" && e.pointerId === drag.pointerId) endDrag(e.timeStamp);
     };
 
     const onPointerCancel = (e: PointerEvent) => {
       if (drag.kind !== "none" && e.pointerId === drag.pointerId) endDrag(null);
     };
 
-    const onPointerLeave = (e: PointerEvent) => {
-      if (drag.kind === "drag" && e.pointerId === drag.pointerId) return; // captured: keeps dragging
-      if (drag.kind === "pending") drag = { kind: "none" };
-      steerX = null;
-      setCursor("");
-      wake();
+    /** A second finger (anywhere) ends the drag without a fling, so a pinch never makes it jump. */
+    const onAnyPointerDown = (e: PointerEvent) => {
+      if (drag.kind !== "none" && e.pointerId !== drag.pointerId) endDrag(null);
     };
 
-    canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointerup", onPointerUp);
-    canvas.addEventListener("pointercancel", onPointerCancel);
-    canvas.addEventListener("lostpointercapture", onPointerCancel);
-    canvas.addEventListener("pointerleave", onPointerLeave);
-    const onBlur = () => {
-      clearInput();
+    hit.addEventListener("pointerdown", onPointerDown);
+    hit.addEventListener("pointermove", onPointerMove);
+    hit.addEventListener("pointerup", onPointerUp);
+    hit.addEventListener("pointercancel", onPointerCancel);
+    hit.addEventListener("lostpointercapture", onPointerCancel);
+    window.addEventListener("pointerdown", onAnyPointerDown, true);
+    const onBlur = () => endDrag(null);
+    window.addEventListener("blur", onBlur);
+    const onPointerKind = () => {
+      hitDirty = true;
       wake();
     };
-    window.addEventListener("blur", onBlur);
+    coarse.addEventListener("change", onPointerKind);
 
     // ---- Lifecycle ---------------------------------------------------------------------------
     const sleep = () => {
@@ -482,10 +463,9 @@ export function EarthCanvas(props: EarthCanvasProps) {
         raf = 0;
       }
       // Stale input must not survive a hidden tab or an offscreen section.
-      clearInput();
+      endDrag(null);
       inertiaLeft = 0;
-      const p = propsRef.current;
-      omega = p.paused || p.reducedMotion || p.held ? 0 : TUNING.baseOmega;
+      idleOmega();
     };
 
     const io = new IntersectionObserver(([e]) => {
@@ -514,13 +494,13 @@ export function EarthCanvas(props: EarthCanvasProps) {
     window.addEventListener("scroll", onScroll, { passive: true });
 
     const onContextLost = () => {
-      clearInput();
+      endDrag(null);
       if (!disposed) propsRef.current.onError("context-lost");
     };
     canvas.addEventListener("webglcontextlost", onContextLost);
 
     resize();
-    orientationQuaternion(tilt, spin, orient.quaternion);
+    orient.quaternion.copy(q);
     earth.ready.then(
       () => {
         if (disposed) return;
@@ -529,6 +509,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
         applyEntry();
         earth.render();
         project();
+        layoutHitArea();
         requestAnimationFrame(() => {
           if (!disposed) propsRef.current.onReady();
         });
@@ -543,22 +524,36 @@ export function EarthCanvas(props: EarthCanvasProps) {
       disposed = true;
       wakeRef.current = () => {};
       cancelAnimationFrame(raf);
-      if (drag.kind === "drag" && canvas.hasPointerCapture(drag.pointerId)) canvas.releasePointerCapture(drag.pointerId);
+      if (drag.kind !== "none" && hit.hasPointerCapture(drag.pointerId)) hit.releasePointerCapture(drag.pointerId);
+      delete hit.dataset.dragging;
+      hit.style.display = "none";
       io.disconnect();
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("blur", onBlur);
-      canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointercancel", onPointerCancel);
-      canvas.removeEventListener("lostpointercapture", onPointerCancel);
-      canvas.removeEventListener("pointerleave", onPointerLeave);
+      window.removeEventListener("pointerdown", onAnyPointerDown, true);
+      coarse.removeEventListener("change", onPointerKind);
+      hit.removeEventListener("pointerdown", onPointerDown);
+      hit.removeEventListener("pointermove", onPointerMove);
+      hit.removeEventListener("pointerup", onPointerUp);
+      hit.removeEventListener("pointercancel", onPointerCancel);
+      hit.removeEventListener("lostpointercapture", onPointerCancel);
       canvas.removeEventListener("webglcontextlost", onContextLost);
       earth.dispose();
     };
   }, []);
 
-  return <canvas ref={canvasRef} aria-hidden="true" className={props.className} />;
+  return (
+    <>
+      <canvas ref={canvasRef} aria-hidden="true" className={props.className} />
+      {/* Drag area: sized and clipped to the globe's silhouette by the effect; hidden until then. */}
+      <div
+        ref={hitRef}
+        aria-hidden="true"
+        data-lenis-prevent-touch=""
+        className="absolute left-0 top-0 hidden cursor-grab touch-none select-none data-[dragging=true]:cursor-grabbing"
+      />
+    </>
+  );
 }
