@@ -7,6 +7,7 @@ import {
   Mesh,
   NoColorSpace,
   NoToneMapping,
+  RepeatWrapping,
   PerspectiveCamera,
   Scene,
   ShaderMaterial,
@@ -17,6 +18,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from "three";
+import { cloudUvOffset } from "./rotation-input";
 import { CAMERA_FOV_DEG, EARTH_TEXTURES, LOOK, QUALITY, SUN_DIRECTION, type QualityTier } from "./earth-config";
 
 /*
@@ -59,6 +61,7 @@ uniform float normalScale;
 uniform float specular;
 uniform float nightIntensity;
 uniform float haze;
+uniform float cloudOffset;
 varying vec2 vUv;
 varying vec3 vNormalW;
 varying vec3 vEastW;
@@ -82,6 +85,9 @@ void main() {
   float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
   albedo = mix(vec3(lum), albedo, saturation);
   vec4 m = texture2D(masks, vUv);
+  // Cloud coverage where the (rotated) cloud shell actually is. No fract(): RepeatWrapping keeps
+  // derivatives continuous so the lookup has no mip seam.
+  float coverage = texture2D(masks, vec2(vUv.x - cloudOffset, vUv.y)).r;
 
   vec3 color = albedo * (max(dot(Np, L), 0.0) * sunIntensity * daylight + ambient);
 
@@ -89,7 +95,7 @@ void main() {
   color += vec3(1.0, 0.96, 0.9) * pow(max(dot(N, H), 0.0), 220.0) * specular * m.g * daylight;
 
   // City lights only where it is night, dimmed under thick cloud.
-  color += texture2D(nightMap, vUv).rgb * nightIntensity * (1.0 - daylight) * (1.0 - 0.7 * m.r);
+  color += texture2D(nightMap, vUv).rgb * nightIntensity * (1.0 - daylight) * (1.0 - 0.7 * coverage);
 
   float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.5);
   color += atmoColor * fresnel * haze * smoothstep(-0.25, 0.6, nlGeo);
@@ -162,6 +168,8 @@ export interface EarthScene {
   clouds: Mesh;
   /** Resolves once every texture is uploaded and shaders are compiled. */
   ready: Promise<void>;
+  /** Cloud shell yaw relative to the surface; also shifts the surface's cloud-coverage lookup. */
+  setCloudYaw(yaw: number): void;
   setSize(width: number, height: number): void;
   render(): void;
   dispose(): void;
@@ -204,6 +212,7 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
       specular: { value: LOOK.specular },
       nightIntensity: { value: LOOK.nightIntensity },
       haze: { value: LOOK.hazeStrength },
+      cloudOffset: { value: 0 },
     },
   });
   const earth = new Mesh(earthGeometry, earthMaterial);
@@ -252,6 +261,8 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
     t.colorSpace = color ? SRGBColorSpace : NoColorSpace;
     t.anisotropy = maxAniso;
     t.minFilter = LinearMipmapLinearFilter;
+    // Longitude wraps; the cloud lookup is offset by the drift and must wrap across ±180°.
+    t.wrapS = RepeatWrapping;
     textures.push(t);
     return t;
   };
@@ -279,6 +290,10 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
     earth,
     clouds,
     ready,
+    setCloudYaw(yaw) {
+      clouds.rotation.y = yaw;
+      earthMaterial.uniforms.cloudOffset.value = cloudUvOffset(yaw);
+    },
     setSize(width, height) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.maxDpr));
       renderer.setSize(width, height, false);

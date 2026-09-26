@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { MAP, MAP_LOCATIONS } from "@/lib/constants";
 import type { MarkerKind } from "@/types/anode";
@@ -28,6 +28,17 @@ const MD = 768;
 
 type Stage = "poster" | "loading" | "ready" | "failed";
 
+const FINE_POINTER = "(hover: hover) and (pointer: fine)";
+const subscribeFinePointer = (onChange: () => void) => {
+  const mql = window.matchMedia(FINE_POINTER);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+};
+/** Hover steering needs a mouse/trackpad; the hint is only shown where it works. */
+function useFinePointer(): boolean {
+  return useSyncExternalStore(subscribeFinePointer, () => window.matchMedia(FINE_POINTER).matches, () => false);
+}
+
 /**
  * "Where We Operate": a WebGL Earth (NASA imagery) with pins at real coordinates.
  * The poster renders from SSR and stays as the fallback. The selected location is kept
@@ -35,6 +46,7 @@ type Stage = "poster" | "loading" | "ready" | "failed";
  */
 export function GlobalFootprint() {
   const reduced = useReducedMotion();
+  const finePointer = useFinePointer();
   const [active, setActive] = useState<number>(MAP.initialIndex);
   const [stage, setStage] = useState<Stage>("poster");
   const [userPaused, setUserPaused] = useState(false);
@@ -193,7 +205,6 @@ export function GlobalFootprint() {
 
   const loc = MAP_LOCATIONS[active];
   const ready = stage === "ready";
-  const spinning = !userPaused && !hold && !reduced;
 
   return (
     <section
@@ -202,7 +213,7 @@ export function GlobalFootprint() {
       aria-labelledby="where-we-operate"
       className="relative flex h-[min(90vh,640px)] w-full flex-col items-center overflow-hidden bg-ink text-white md:h-[min(90vh,800px)]"
     >
-      <div ref={titleRef} className="absolute left-1/2 top-[100px] z-[1] flex w-[1200px] max-w-none -translate-x-1/2 flex-col items-center gap-4 px-6">
+      <div ref={titleRef} className="pointer-events-none absolute left-1/2 top-[100px] z-[1] flex w-[1200px] max-w-none -translate-x-1/2 flex-col items-center gap-4 px-6">
         <SectionLabel light>{MAP.label}</SectionLabel>
         <RevealText
           as="h3"
@@ -225,14 +236,16 @@ export function GlobalFootprint() {
         <EarthCanvas
           markers={MARKERS}
           focus={focus}
-          spinning={spinning}
+          paused={userPaused}
+          held={hold}
           reducedMotion={reduced}
           background={BACKGROUND}
           onProject={onProject}
           onReady={() => setStage("ready")}
           onError={() => setStage("failed")}
           className={cn(
-            "pointer-events-none absolute inset-0 block h-full w-full transition-opacity duration-[350ms] ease-cta",
+            // Receives steering/drag input; pan-y keeps vertical touch scrolling native.
+            "absolute inset-0 block h-full w-full touch-pan-y transition-opacity duration-[350ms] ease-cta",
             ready ? "opacity-100" : "opacity-0",
           )}
         />
@@ -297,7 +310,8 @@ export function GlobalFootprint() {
         </div>
       </div>
 
-      <div className="absolute inset-x-4 bottom-4 z-[3] flex flex-wrap items-end justify-between gap-4 md:inset-x-14 md:bottom-6">
+      {/* The bar spans the full width: only its controls take pointer input, the rest lets the globe steer. */}
+      <div className="pointer-events-none absolute inset-x-4 bottom-4 z-[3] flex flex-wrap items-end justify-between gap-4 md:inset-x-14 md:bottom-6">
         <div className="flex flex-wrap gap-[18px]">
           {(Object.keys(MAP.kinds) as MarkerKind[]).map((kind) => (
             <span key={kind} className="flex items-center gap-[7px] font-mono text-[9.5px] uppercase tracking-[0.57px] text-white/[0.72]">
@@ -306,7 +320,12 @@ export function GlobalFootprint() {
             </span>
           ))}
         </div>
-        <div {...holdHandlers} className="flex items-center gap-2 font-mono text-[9.5px] tracking-[0.57px] text-white/[0.72]">
+        {ready && finePointer ? (
+          <p className="hidden font-mono text-[9.5px] uppercase tracking-[0.57px] text-white/[0.5] desk:block">
+            {reduced ? "Drag to explore" : "Move left or right to steer · Drag to explore"}
+          </p>
+        ) : null}
+        <div {...holdHandlers} className="pointer-events-auto flex items-center gap-2 font-mono text-[9.5px] tracking-[0.57px] text-white/[0.72]">
           <button
             type="button"
             aria-label="Previous location"

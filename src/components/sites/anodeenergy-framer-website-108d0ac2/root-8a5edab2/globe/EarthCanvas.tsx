@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Matrix4, Quaternion, Vector3 } from "three";
+import { Euler, Matrix4, Quaternion, Ray, Sphere, Vector3 } from "three";
 import type { GeoPoint } from "@/types/anode";
-import { CAMERA_FOV_DEG, ENTRY, ORIENTATION, pickFraming, pickTier } from "./earth-config";
+import { CAMERA_FOV_DEG, CLOUDS, ENTRY, INTERACTION, ORIENTATION, pickFraming, pickTier } from "./earth-config";
 import { createEarthScene, type EarthScene } from "./create-earth-scene";
 import { facingCamera, latLonToVector3, limbOpacity, projectToCss, shortestAngleDelta, spinToFaceLongitude } from "./project-markers";
+import { damp, dragDeltaYaw, normalisedSteerX, releaseVelocity, rotationTarget, smoothVelocity, type RotationTuning } from "./rotation-input";
 
 export interface ProjectedMarker {
   x: number;
@@ -22,8 +23,10 @@ export interface FocusRequest {
 interface EarthCanvasProps {
   markers: (GeoPoint | null)[];
   focus: FocusRequest | null;
-  /** Auto-rotation wanted (not paused by the visitor, not held by hover/focus). */
-  spinning: boolean;
+  /** Explicit Pause button: surface and clouds stop; hover never restarts it. */
+  paused: boolean;
+  /** Pointer/keyboard focus on a pin, card or control: the surface stops so it can be read. */
+  held: boolean;
   reducedMotion: boolean;
   background: string;
   className?: string;
@@ -36,6 +39,18 @@ const DEG = Math.PI / 180;
 const X_AXIS = new Vector3(1, 0, 0);
 const Y_AXIS = new Vector3(0, 1, 0);
 const ORIGIN = new Vector3();
+const TWO_PI = Math.PI * 2;
+
+const TUNING: RotationTuning = {
+  baseOmega: TWO_PI / ORIENTATION.periodSeconds,
+  steering: INTERACTION.steering,
+  tauSteer: INTERACTION.tauSteer,
+  tauIdle: INTERACTION.tauIdle,
+  tauHold: INTERACTION.tauHold,
+  tauPause: INTERACTION.tauPause,
+  tauInertia: INTERACTION.tauInertia,
+};
+const CLOUD_OMEGA = TWO_PI / CLOUDS.relativePeriodSeconds;
 
 function orientationQuaternion(tilt: number, spin: number, target = new Quaternion()): Quaternion {
   const qy = new Quaternion().setFromAxisAngle(Y_AXIS, spin);
@@ -45,10 +60,19 @@ function orientationQuaternion(tilt: number, spin: number, target = new Quaterni
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
+type DragState =
+  | { kind: "none" }
+  | { kind: "pending"; pointerId: number; startX: number; startY: number; lastX: number; lastT: number }
+  | { kind: "drag"; pointerId: number; lastX: number; lastT: number; velocity: number };
+
 /**
  * WebGL Earth. Owns the canvas, the render loop and the globe orientation; the parent owns
  * all DOM (title, pins, card, controls) and receives projected pin positions every rendered
  * frame through `onProject` (no React state per frame).
+ *
+ * Orientation has one writer — the frame loop. Pointer events only record input (steering
+ * position, drag deltas); the loop turns them into yaw. Priority per frame:
+ * focus tween > drag > (pause | reduced motion | UI hold | inertia | steering | idle).
  */
 export function EarthCanvas(props: EarthCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -72,7 +96,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
       propsRef.current.onError("webgl-unavailable");
       return;
     }
-    const { camera, framing, orient, clouds } = earth;
+    const { camera, framing, orient } = earth;
 
     let disposed = false;
     let ready = false;
@@ -85,7 +109,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
     let rPx = 0;
     let topPx = 0;
 
-    // Orientation state (owned here only).
+    // Orientation state (written only in `frame`).
     let spin = spinToFaceLongitude(ORIENTATION.initialLon);
     const defaultTilt = ORIENTATION.axisLat * DEG;
     let tilt = defaultTilt;
@@ -93,17 +117,29 @@ export function EarthCanvas(props: EarthCanvasProps) {
     let holdTilt = false;
     let focusedPin = -1;
     let focusedPinVisible = false;
-    let speed = 0;
+    /** Signed surface angular velocity (rad/s). Starts at idle so the first frames already turn. */
+    let omega = propsRef.current.paused || propsRef.current.reducedMotion ? 0 : TUNING.baseOmega;
+    let inertiaLeft = 0;
+    /** Cloud shell yaw relative to the surface: its own clock. */
+    let cloudYaw = 0;
     let entry = propsRef.current.reducedMotion ? 1 : 0;
     let lastFocusSeq = propsRef.current.focus?.seq ?? -1;
     let tween: { from: Quaternion; to: Quaternion; start: number; spin: number; tilt: number } | null = null;
 
+    // Input state (written by events, consumed by `frame`).
+    let steerX: number | null = null;
+    let drag: DragState = { kind: "none" };
+    let pendingYaw = 0;
+
     const localPins = propsRef.current.markers.map((g) => (g ? latLonToVector3(g.lat, g.lon, 1) : null));
     const world = new Vector3();
     const center = new Vector3();
+    const ray = new Ray();
+    const sphere = new Sphere();
+    const hitNdc = new Vector3();
 
     const fitFraming = () => {
-      const f = (height / 2) / Math.tan((CAMERA_FOV_DEG * DEG) / 2);
+      const f = height / 2 / Math.tan((CAMERA_FOV_DEG * DEG) / 2);
       const cfg = pickFraming(width);
       rPx = Math.min((cfg.diameter * width) / 2, cfg.maxRadiusOfHeight * height);
       topPx = cfg.top * height;
@@ -123,6 +159,18 @@ export function EarthCanvas(props: EarthCanvasProps) {
       earth.setSize(w, h);
       fitFraming();
       dirty = true;
+    };
+
+    /** Cheap ray–sphere test against the globe for a point in canvas CSS px (no scene raycast). */
+    const hitsGlobe = (x: number, y: number) => {
+      if (!width || !height) return false;
+      hitNdc.set((x / width) * 2 - 1, 1 - (y / height) * 2, 0.5).unproject(camera);
+      ray.origin.set(0, 0, 0);
+      ray.direction.copy(hitNdc).normalize();
+      framing.updateMatrixWorld(true);
+      sphere.center.setFromMatrixPosition(framing.matrixWorld);
+      sphere.radius = framing.scale.x;
+      return ray.intersectsSphere(sphere);
     };
 
     /** Orientation that brings pin `i` to the framing's focus point (refined by projection). */
@@ -148,6 +196,15 @@ export function EarthCanvas(props: EarthCanvasProps) {
         t = Math.max(-75 * DEG, Math.min(60 * DEG, t));
       }
       return { tilt: t, spin: spin + shortestAngleDelta(spin, s) };
+    };
+
+    /** A drag interrupts a focus tween: continue from the orientation currently on screen. */
+    const rebaseTween = () => {
+      if (!tween) return;
+      const e = new Euler().setFromQuaternion(orient.quaternion, "XYZ");
+      tilt = e.x;
+      spin += shortestAngleDelta(spin, e.y);
+      tween = null;
     };
 
     const project = () => {
@@ -187,13 +244,14 @@ export function EarthCanvas(props: EarthCanvasProps) {
       last = now;
       const p = propsRef.current;
 
-      // Focus requests from the parent (selection).
+      // Focus requests from the parent (selection). An explicit selection runs even when paused.
       if (p.focus && p.focus.seq !== lastFocusSeq) {
         lastFocusSeq = p.focus.seq;
         const target = solveFocus(p.focus.index);
         if (target) {
           holdTilt = true;
           focusedPin = p.focus.index;
+          if (drag.kind === "drag") drag = { kind: "none" };
           if (p.reducedMotion) {
             spin = target.spin;
             tilt = target.tilt;
@@ -205,11 +263,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
         }
       }
 
-      const wantSpin = p.spinning && !p.reducedMotion && !tween;
-      const k = 1 - Math.exp(-dt / ORIENTATION.speedTau);
-      const nextSpeed = speed + ((wantSpin ? 1 : 0) - speed) * k;
-      speed = Math.abs(nextSpeed - (wantSpin ? 1 : 0)) < 0.001 ? (wantSpin ? 1 : 0) : Math.min(1, Math.max(0, nextSpeed));
-
+      const dragging = drag.kind === "drag";
       if (tween) {
         const t = Math.min(1, (now - tween.start) / ORIENTATION.focusMs);
         orient.quaternion.slerpQuaternions(tween.from, tween.to, easeInOutCubic(t));
@@ -218,21 +272,45 @@ export function EarthCanvas(props: EarthCanvasProps) {
           tilt = tween.tilt;
           tween = null;
         }
+        omega = 0;
+        inertiaLeft = 0;
+        pendingYaw = 0;
         dirty = true;
       } else {
-        if (speed > 0) {
-          const omega = (Math.PI * 2) / ORIENTATION.periodSeconds;
-          spin += omega * speed * dt;
-          clouds.rotation.y += ((Math.PI * 2) / ORIENTATION.cloudPeriodSeconds) * speed * dt;
-          if (holdTilt && !focusedPinVisible) holdTilt = false;
-          dirty = true;
+        if (dragging) {
+          // Direct manipulation: the pointer owns yaw; omega mirrors the drag velocity so a
+          // release continues smoothly.
+          spin += pendingYaw;
+          if (pendingYaw !== 0) dirty = true;
+          pendingYaw = 0;
+          omega = drag.kind === "drag" ? drag.velocity : omega;
+        } else {
+          inertiaLeft = Math.max(0, inertiaLeft - dt);
+          const target = rotationTarget(
+            { paused: p.paused, held: p.held, reducedMotion: p.reducedMotion, steerX: p.reducedMotion ? null : steerX, inertiaLeft },
+            TUNING,
+          );
+          omega = damp(omega, target.omega, dt, target.tau);
+          if (Math.abs(omega - target.omega) < 1e-5) omega = target.omega;
+          spin += omega * dt;
+          if (omega !== 0) dirty = true;
         }
-        // The tilt only drifts back while rotating, so a pause freezes the globe completely.
-        if (!holdTilt && speed > 0 && Math.abs(tilt - defaultTilt) > 1e-4) {
-          tilt += (defaultTilt - tilt) * (1 - Math.exp(-(dt * speed) / ORIENTATION.tiltReturnTau));
+        const activity = dragging ? 1 : Math.min(1, Math.abs(omega) / TUNING.baseOmega);
+        if (activity > 0 && holdTilt && !focusedPinVisible) holdTilt = false;
+        // The tilt only drifts back while the globe turns, so a pause freezes it completely.
+        if (!holdTilt && activity > 0 && Math.abs(tilt - defaultTilt) > 1e-4) {
+          tilt += (defaultTilt - tilt) * (1 - Math.exp(-(dt * activity) / ORIENTATION.tiltReturnTau));
           dirty = true;
         }
         orientationQuaternion(tilt, spin, orient.quaternion);
+      }
+
+      // Weather clock: independent of the surface (held, reversed or dragged), stopped by Pause.
+      const cloudsDrift = !p.paused && !p.reducedMotion;
+      if (cloudsDrift) {
+        cloudYaw = (cloudYaw + CLOUD_OMEGA * dt) % TWO_PI;
+        earth.setCloudYaw(cloudYaw);
+        dirty = true;
       }
 
       const nextEntry = readEntry();
@@ -240,14 +318,17 @@ export function EarthCanvas(props: EarthCanvasProps) {
         entry = nextEntry;
         dirty = true;
       }
-      const busy = wantSpin || speed > 0 || tween !== null;
       if (dirty) {
         applyEntry();
         earth.render();
         project();
         dirty = false;
       }
-      // Sleep when nothing moves; props, scroll, resize and visibility changes wake the loop.
+      const busy = tween !== null || dragging || omega !== 0 || cloudsDrift || rotationTarget(
+        { paused: p.paused, held: p.held, reducedMotion: p.reducedMotion, steerX, inertiaLeft },
+        TUNING,
+      ).omega !== 0;
+      // Sleep when nothing moves; props, pointer, scroll, resize and visibility changes wake the loop.
       if (busy) schedule();
     };
 
@@ -264,13 +345,133 @@ export function EarthCanvas(props: EarthCanvasProps) {
     };
     wakeRef.current = wake;
 
-    const io = new IntersectionObserver(([e]) => {
-      visible = e.isIntersecting;
-      if (visible) wake();
-      else if (raf) {
+    // ---- Pointer input -------------------------------------------------------------------
+    const setCursor = (c: string) => {
+      if (canvas.style.cursor !== c) canvas.style.cursor = c;
+    };
+
+    const endDrag = (releaseAt: number | null) => {
+      if (drag.kind === "drag") {
+        if (canvas.hasPointerCapture(drag.pointerId)) canvas.releasePointerCapture(drag.pointerId);
+        const p = propsRef.current;
+        const v = releaseAt === null ? 0 : releaseVelocity(drag.velocity, releaseAt - drag.lastT, INTERACTION.releaseStaleMs, INTERACTION.maxFlingOmega);
+        // Pause and reduced motion: a drag is a direct edit only — no inertia, no resume.
+        omega = p.paused || p.reducedMotion ? 0 : v;
+        inertiaLeft = p.paused || p.reducedMotion ? 0 : INTERACTION.inertiaSeconds;
+      }
+      drag = { kind: "none" };
+      setCursor("");
+      wake();
+    };
+
+    const clearInput = () => {
+      steerX = null;
+      if (drag.kind !== "none") endDrag(null);
+      setCursor("");
+    };
+
+    const updateSteer = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || !ready) {
+        steerX = null;
+        return;
+      }
+      const over = hitsGlobe(e.offsetX, e.offsetY);
+      steerX = over ? normalisedSteerX(e.offsetX, width, rPx * framing.scale.x) : null;
+      setCursor(over ? "grab" : "");
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (drag.kind === "pending" && e.pointerId === drag.pointerId) {
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        if (Math.hypot(dx, dy) >= INTERACTION.dragThresholdPx) {
+          // Touch: only horizontal gestures rotate; vertical ones stay page scroll (touch-action: pan-y).
+          if (e.pointerType === "touch" && Math.abs(dy) > Math.abs(dx)) {
+            drag = { kind: "none" };
+            return;
+          }
+          rebaseTween();
+          canvas.setPointerCapture(e.pointerId);
+          drag = { kind: "drag", pointerId: e.pointerId, lastX: drag.lastX, lastT: drag.lastT, velocity: 0 };
+          setCursor("grabbing");
+        } else {
+          return;
+        }
+      }
+      if (drag.kind === "drag") {
+        if (e.pointerId !== drag.pointerId) return;
+        const now = e.timeStamp;
+        const dYaw = dragDeltaYaw(e.clientX - drag.lastX, rPx * framing.scale.x, INTERACTION.dragGain);
+        pendingYaw += dYaw;
+        drag.velocity = smoothVelocity(drag.velocity, dYaw, Math.max(0.001, (now - drag.lastT) / 1000), INTERACTION.velocityTau);
+        drag.lastX = e.clientX;
+        drag.lastT = now;
+        wake();
+        return;
+      }
+      if (e.buttons === 0) {
+        updateSteer(e);
+        wake();
+      }
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!ready || !e.isPrimary || e.button !== 0 || drag.kind !== "none") return;
+      if (!hitsGlobe(e.offsetX, e.offsetY)) return;
+      drag = { kind: "pending", pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastT: e.timeStamp };
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (drag.kind === "none" || e.pointerId !== drag.pointerId) return;
+      if (drag.kind === "pending") {
+        drag = { kind: "none" };
+        return;
+      }
+      endDrag(e.timeStamp);
+      updateSteer(e);
+    };
+
+    const onPointerCancel = (e: PointerEvent) => {
+      if (drag.kind !== "none" && e.pointerId === drag.pointerId) endDrag(null);
+    };
+
+    const onPointerLeave = (e: PointerEvent) => {
+      if (drag.kind === "drag" && e.pointerId === drag.pointerId) return; // captured: keeps dragging
+      if (drag.kind === "pending") drag = { kind: "none" };
+      steerX = null;
+      setCursor("");
+      wake();
+    };
+
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerCancel);
+    canvas.addEventListener("lostpointercapture", onPointerCancel);
+    canvas.addEventListener("pointerleave", onPointerLeave);
+    const onBlur = () => {
+      clearInput();
+      wake();
+    };
+    window.addEventListener("blur", onBlur);
+
+    // ---- Lifecycle ---------------------------------------------------------------------------
+    const sleep = () => {
+      if (raf) {
         cancelAnimationFrame(raf);
         raf = 0;
       }
+      // Stale input must not survive a hidden tab or an offscreen section.
+      clearInput();
+      inertiaLeft = 0;
+      const p = propsRef.current;
+      omega = p.paused || p.reducedMotion || p.held ? 0 : TUNING.baseOmega;
+    };
+
+    const io = new IntersectionObserver(([e]) => {
+      visible = e.isIntersecting;
+      if (visible) wake();
+      else sleep();
     });
     io.observe(section);
 
@@ -282,10 +483,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
 
     const onVisibility = () => {
       if (document.visibilityState === "visible") wake();
-      else if (raf) {
-        cancelAnimationFrame(raf);
-        raf = 0;
-      }
+      else sleep();
     };
     document.addEventListener("visibilitychange", onVisibility);
     const onScroll = () => {
@@ -296,6 +494,7 @@ export function EarthCanvas(props: EarthCanvasProps) {
     window.addEventListener("scroll", onScroll, { passive: true });
 
     const onContextLost = () => {
+      clearInput();
       if (!disposed) propsRef.current.onError("context-lost");
     };
     canvas.addEventListener("webglcontextlost", onContextLost);
@@ -324,10 +523,18 @@ export function EarthCanvas(props: EarthCanvasProps) {
       disposed = true;
       wakeRef.current = () => {};
       cancelAnimationFrame(raf);
+      if (drag.kind === "drag" && canvas.hasPointerCapture(drag.pointerId)) canvas.releasePointerCapture(drag.pointerId);
       io.disconnect();
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("blur", onBlur);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("lostpointercapture", onPointerCancel);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("webglcontextlost", onContextLost);
       earth.dispose();
     };

@@ -48,17 +48,46 @@ export const ORIENTATION = {
   initialLon: 70,
   /** Latitude that sits on the view axis by default (tilts the north towards the viewer). */
   axisLat: 8,
-  /** Seconds per revolution while auto-rotating (proposed 120–180s range). */
+  /** Seconds per revolution while idle (unchanged baseline; proposed 120–180s range). */
   periodSeconds: 150,
-  /** Clouds drift eastward relative to the surface: one extra turn per this many seconds. */
-  cloudPeriodSeconds: 1400,
-  /** Time constant for easing rotation speed to 0 / back to 1 (≈ 250ms to settle). */
-  speedTau: 0.08,
   /** Delay before auto-rotation resumes after pointer/focus leaves the UI. */
   resumeDelayMs: 1500,
   /** Focus tween duration and the time constant for easing tilt back to the default. */
   focusMs: 1000,
   tiltReturnTau: 1.6,
+} as const;
+
+/**
+ * Pointer steering, drag and release inertia (proposed values, tuned in the browser).
+ * Angular velocities are rad/s; positive moves the visible surface to the viewer's right.
+ */
+export const INTERACTION = {
+  steering: { deadZone: 0.12, leftGain: 7, rightGain: 5 },
+  /** Exponential time constants (s): towards a steering target, back to idle, UI hold, Pause, after a fling. */
+  tauSteer: 0.24,
+  tauIdle: 0.45,
+  tauHold: 0.08,
+  tauPause: 0.12,
+  tauInertia: 0.25,
+  /** Release inertia window (s) during which tauInertia applies. */
+  inertiaSeconds: 0.7,
+  /** Pointer travel (CSS px) before a press becomes a drag. */
+  dragThresholdPx: 5,
+  /** Yaw per CSS px = gain / projected globe radius: 1 keeps the grabbed point under the cursor near the centre. */
+  dragGain: 1,
+  /** Smoothing of the drag velocity estimate (s), the age after which a release counts as "stopped" (ms), and the fling cap (rad/s). */
+  velocityTau: 0.05,
+  releaseStaleMs: 90,
+  maxFlingOmega: 3,
+} as const;
+
+/**
+ * Cloud shell drift relative to the surface. Its own clock: keeps running while the surface is
+ * held or reversed, stops only for Pause, reduced motion, hidden tab or offscreen. Time-compressed
+ * artistic motion, not a wind model.
+ */
+export const CLOUDS = {
+  relativePeriodSeconds: 800,
 } as const;
 
 /** Sun direction in view space: upper right, slightly towards the camera. Night falls on the left. */
