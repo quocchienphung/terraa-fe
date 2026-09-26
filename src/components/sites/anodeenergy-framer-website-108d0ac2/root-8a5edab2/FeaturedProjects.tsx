@@ -6,6 +6,7 @@ import { prefersReducedMotion } from "@/lib/animations";
 import { CarouselButton } from "../shared/CarouselButton";
 import { SectionLabel } from "../shared/SectionLabel";
 import { ProjectCard } from "./ProjectCard";
+import { RevealText } from "../shared/RevealText";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -84,12 +85,13 @@ export function FeaturedProjects() {
           <div className="flex w-full items-end gap-8 tab:px-6">
             <div className="flex flex-1 flex-col items-start gap-6 pl-2 tab:pl-0">
               <SectionLabel>{PROJECTS_SECTION.label}</SectionLabel>
-              <h2
+              <RevealText
+                as="h2"
                 id="featured-projects"
                 className="whitespace-pre-wrap text-[32px] font-normal leading-[1.05] tracking-[-1.28px] text-ink-2 tab:text-[48px] tab:tracking-[-1.92px] desk:text-[72px] desk:tracking-[-2.88px]"
               >
                 {PROJECTS_SECTION.title}
-              </h2>
+              </RevealText>
             </div>
 
             <div className="w-28 flex-none">

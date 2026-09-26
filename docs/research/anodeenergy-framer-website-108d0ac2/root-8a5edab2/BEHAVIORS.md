@@ -2,7 +2,7 @@
 
 ## Global
 - **Lenis smooth scroll** on `<html>`. Replicate with the `lenis` package (default settings).
-- **No entrance/appear animations.** Verified 300ms after DOMContentLoaded: every text node has opacity 1 and no transform.
+- ~~No entrance/appear animations.~~ **Corrected 2026-09-26** (see `MOTION_AUDIT.md`): the old check only covered above-the-fold text 300ms after DOMContentLoaded. Hero h1/h5 really are static, but the two hero supporting paragraphs, the What We Do statement, *Our Solutions*, *Where We Operate* and *Featured Projects* use per-line masks (`overflow:hidden; padding-bottom:.14em; margin-bottom:-.14em`, inner line `translateY(130%)` → 0). Measured: 750ms `cubic-bezier(0.25,1,0.5,1)`, 110ms stagger between lines entering together, each line triggers when its mask is ~20px inside the viewport, plays once, and the spans are removed afterwards.
 - Easings used by the site's code components: `cubic-bezier(0.22, 0.61, 0.24, 1)` (CTAs, carousels, cards) and `cubic-bezier(0.16, 1, 0.3, 1)` (nav, menu).
 - `prefers-reduced-motion: reduce` disables the tick-ring spin, pulse ring and CTA transitions on the source.
 
@@ -19,19 +19,19 @@
 - Section `clip-path: polygon(0 0,100% 0,100% 100%,62% 100%,calc(62% - 60px) calc(100% - 55px),0 calc(100% - 55px))` (notch bottom-left, 55px tall). Same on all breakpoints.
 
 ## Client ticker
-- Logo row (4 logoipsum svgs × 4 copies, height 22px, gap 90px) translates left continuously (linear, ≈ 60px/s). Ruler row below (ticks 1×18px @ rgba(18,18,18,.55) every 5th, 1×8px @ .25 otherwise, gap 29px) translates left (≈ 40px/s). Center marker: 2×22px bar `#121212` + 10×6 triangle, static.
+- Logo row (4 logoipsum svgs × 4 copies, height 22px, gap 90px) and ruler row (ticks 1×18px @ rgba(18,18,18,.55) every 5th, 1×8px @ .25 otherwise, gap 29px) are JS-driven. **Corrected 2026-09-26:** idle speeds are logos **40px/s**, ruler **56px/s** (the earlier 60/40 was swapped). Both are scroll-coupled: scrolling down turns them rightward, scrolling up leftward, the last direction persists, and speed ≈ base × (1 + scroll px/s ÷ 80). Center marker: 2×22px bar `#121212` + 10×6 triangle, static.
 
 ## What We Do — Arrow CTA (336×80 desktop, full-width phone)
 - bg `#f5f5f5`, clip-path corner-cut 12px, padding 48px 12px 12px. Hover: `.sweep` scaleX 0→1 (origin right→left, 0.42s), color stays `#121212` for the green sweep (Our Story) or → white for the black sweep (Our Solutions). Arrow mask 20×20: `.out` → translateX(130%), `.in` from translateX(-130%) → 0.
 
 ## Our Solutions (sticky stack)
-- Each "Product Row" is `position: sticky; top: 0; overflow: hidden`. Rows stack; when the next row slides over, the covered row's overlay (`bg #0c0c0c`) fades 0 → **0.42** while the next row's top travels from ≈650px → 0 (0.02@555, 0.18@355, 0.28@255, 0.36@155, 0.42@0). Stays at 0.42 once covered.
+- Each "Product Row" is `position: sticky; top: 0; overflow: hidden`. Rows stack; when the next row slides over, the covered row's overlay (`bg #0c0c0c`) fades 0 → **0.42** while the next row's top travels from the covered row's height → 0. **Corrected 2026-09-26:** the curve is `0.42 × smoothstep(1 − top / rowHeight)` (1440×900: 0.006@600, 0.137@400, 0.325@200, 0.42@0; travel ≈ 875px at 768 where the row is 894px tall), not linear over a fixed 650px. Stays at 0.42 once covered.
 - Explore CTA (200×42) bg `#e6e6e6`, padding 12px 12px 14px, hover black sweep + text white, 16px arrow mask.
 
 ## Global Footprint (map)
 - 9 markers (40×40 buttons, `translate(-50%,-50%)`) at % positions. Active marker: color `#00e05c`, icon 17px, two rings (inset 5px, 1px green border, radius 50%): `.pulse` keyframes scale .45→1.8 / opacity .9→0 over 2.4s infinite; static ring opacity .55.
 - Hover on marker: color → `#00e05c`.
-- **Auto-cycles every 5s** (0→1→…→8→0). Clicking a marker selects it (timer restarts).
+- **Auto-cycles every 5s** (0→1→…→8→0). Clicking a marker selects it (timer restarts). *Reference only — the local upgrade replaces the still with a rotating WebGL Earth and deliberately drops auto-advance (see `MOTION_IMPLEMENTATION.md`).* The reference % positions are illustrative (Texas sites sit on Asia in the poster); they are not geography.
 - Card (300×185): `left: min(X%, 100% - 344px); top: max(Y%, 330px); transform: translate(26px, calc(-100% + 10px))`; bg `rgba(16,16,16,.42)` + dashed grid svg, border 1px `rgba(255,255,255,.08)`, radius 12px, backdrop-filter blur(28px) saturate(1.15), padding 20px 22px 22px. Enter animation "rise": opacity 0→1, translateY(8px)→0 (~0.35s).
 - Phone: card is `left:12px; right:12px; bottom:44px` (366×170, padding 15px 16px 16px, no transform).
 - Legend bottom-left (Operating site / Office / In development) + counter "02 / 09" bottom-right, Spline Sans Mono 9.5px ls .57px uppercase `rgba(255,255,255,.72)`, inset 56px, bottom 24px.

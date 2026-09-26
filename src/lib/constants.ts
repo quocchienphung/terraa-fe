@@ -86,8 +86,13 @@ export const SOLUTIONS: Solution[] = [
 export const MAP = {
   label: "Global Footprint",
   title: "Where We Operate",
+  /** Perspective poster: SSR placeholder and WebGL fallback. Not a map projection. */
   image: `${IMG}/globe-night.webp`,
-  cycleMs: 5000,
+  /**
+   * Location selected on load (Rotterdam). The globe opens on Eurasia like the poster, so the
+   * first selection is one that is actually on screen; the Texas sites rotate in afterwards.
+   */
+  initialIndex: 6,
   kinds: {
     site: "Operating site",
     office: "Office",
@@ -95,10 +100,14 @@ export const MAP = {
   },
 };
 
+/**
+ * Coordinates: offices use city-centre values (rounded, gazetteer-level). Project sites are
+ * demo content without published locations, so each uses a representative point for the
+ * region named in `place` and is flagged `approximate` — the pin marks the region only.
+ */
 export const MAP_LOCATIONS: MapLocation[] = [
   {
-    left: 30,
-    top: 56,
+    geo: { lat: 31.9, lon: -102.1, precision: "approximate" },
     kind: "site",
     name: "Bell Junction",
     place: "West Texas · ERCOT",
@@ -106,8 +115,7 @@ export const MAP_LOCATIONS: MapLocation[] = [
       "Standalone storage dispatching into ERCOT West. Containerized LFP, energized and operated by Anode from first dispatch.",
   },
   {
-    left: 42,
-    top: 68,
+    geo: { lat: 29.8, lon: -95.0, precision: "approximate" },
     kind: "site",
     name: "Cedar Bayou",
     place: "Gulf Coast, Texas · ERCOT",
@@ -115,8 +123,7 @@ export const MAP_LOCATIONS: MapLocation[] = [
       "Fourteen months from interconnection study to first dispatch. The enclosure Anode certified is the enclosure Anode operates.",
   },
   {
-    left: 22,
-    top: 72,
+    geo: { lat: 30.3, lon: -104.0, precision: "approximate" },
     kind: "site",
     name: "Marfa Flats",
     place: "Far West Texas · ERCOT",
@@ -124,8 +131,7 @@ export const MAP_LOCATIONS: MapLocation[] = [
       "Merchant storage running day-ahead co-optimization on Anode dispatch software, with degradation tracked block by block.",
   },
   {
-    left: 36,
-    top: 46,
+    geo: { lat: 35.2, lon: -101.8, precision: "approximate" },
     kind: "site",
     name: "Salt Fork",
     place: "Texas Panhandle · ERCOT",
@@ -133,8 +139,7 @@ export const MAP_LOCATIONS: MapLocation[] = [
       "Completed its first augmentation cycle with no measured capacity shortfall against the contracted curve.",
   },
   {
-    left: 52,
-    top: 58,
+    geo: { lat: 32.78, lon: -96.8, precision: "city" },
     kind: "office",
     name: "Dallas HQ",
     place: "Dallas, Texas",
@@ -142,24 +147,21 @@ export const MAP_LOCATIONS: MapLocation[] = [
       "Headquarters — development, engineering, and the operations desk that dispatches the fleet.",
   },
   {
-    left: 47,
-    top: 78,
+    geo: { lat: 30.27, lon: -97.74, precision: "city" },
     kind: "office",
     name: "Austin",
     place: "Austin, Texas",
     description: "Software and market operations — the team behind Argus and the bidding stack.",
   },
   {
-    left: 66,
-    top: 44,
+    geo: { lat: 51.92, lon: 4.48, precision: "approximate" },
     kind: "dev",
     name: "Rotterdam",
     place: "Netherlands · TenneT",
     description: "Grid-services storage in development with a European utility partner.",
   },
   {
-    left: 82,
-    top: 72,
+    geo: { lat: -34.93, lon: 138.6, precision: "approximate" },
     kind: "dev",
     name: "Adelaide",
     place: "South Australia · NEM",
@@ -167,8 +169,7 @@ export const MAP_LOCATIONS: MapLocation[] = [
       "Utility-scale storage in development in one of the world’s fastest-moving storage markets.",
   },
   {
-    left: 62,
-    top: 88,
+    geo: { lat: -33.45, lon: -70.67, precision: "approximate" },
     kind: "dev",
     name: "Santiago",
     place: "Chile · SEN",

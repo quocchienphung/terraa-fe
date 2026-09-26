@@ -1,8 +1,22 @@
 export type MarkerKind = "site" | "office" | "dev";
 
+/**
+ * How much a coordinate can be trusted:
+ * - `city`: city-centre coordinate of the named office city (gazetteer value, 0.01°).
+ * - `approximate`: representative point for the region named in `place`; the real site
+ *   location is not published, so the pin marks the region, not the asset.
+ */
+export type GeoPrecision = "city" | "approximate";
+
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  precision: GeoPrecision;
+}
+
 export interface MapLocation {
-  left: number;
-  top: number;
+  /** `null` = location unknown: listed and selectable, but no pin is drawn. */
+  geo: GeoPoint | null;
   kind: MarkerKind;
   name: string;
   place: string;

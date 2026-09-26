@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { NAV } from "@/lib/constants";
 import { MenuMarkIcon } from "../shared/icons";
+import { pauseSmoothScroll, resumeSmoothScroll } from "../shared/SmoothScroll";
 import { MenuOverlay } from "./MenuOverlay";
 
 /** Vertical center of the nav bar — the point used to decide which section is "under" it. */
@@ -43,10 +44,15 @@ export function Header() {
     };
   }, [probe]);
 
+  // Lock the page behind the overlay: stop Lenis (it would still consume wheel/keys) and
+  // native overflow for the reduced-motion case where Lenis is not running.
   useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
+    if (!open) return;
+    pauseSmoothScroll();
+    document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = "";
+      resumeSmoothScroll();
     };
   }, [open]);
 

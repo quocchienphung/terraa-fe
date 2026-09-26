@@ -51,20 +51,46 @@ export function Testimonials() {
   const boxRef = useRef<HTMLDivElement>(null);
   const timer = useRef<number | null>(null);
   const busy = useRef(false);
+  /** Quote currently measured/shown — read by the resize observer so it never re-measures quote 0. */
+  const indexRef = useRef(0);
+  /** Pending phase timeouts and frames, cleared on unmount. */
+  const timeouts = useRef<number[]>([]);
+  const frames = useRef<number[]>([]);
 
   const remeasure = useCallback((i: number) => {
     const box = boxRef.current;
     if (!box) return;
+    indexRef.current = i;
     setLines(measureLines(box, TESTIMONIALS[i].quote));
   }, []);
 
   useLayoutEffect(() => {
-    remeasure(index);
-    const onResize = () => remeasure(index);
-    window.addEventListener("resize", onResize);
-    document.fonts?.ready.then(() => remeasure(index));
-    return () => window.removeEventListener("resize", onResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const box = boxRef.current;
+    if (!box) return;
+    let disposed = false;
+    let width = box.clientWidth;
+    remeasure(indexRef.current);
+    const ro = new ResizeObserver(() => {
+      if (Math.abs(box.clientWidth - width) < 1) return;
+      width = box.clientWidth;
+      remeasure(indexRef.current);
+    });
+    ro.observe(box);
+    document.fonts?.ready.then(() => {
+      if (!disposed) remeasure(indexRef.current);
+    });
+    const pendingTimeouts = timeouts.current;
+    const pendingFrames = frames.current;
+    return () => {
+      disposed = true;
+      ro.disconnect();
+      pendingTimeouts.forEach((id) => window.clearTimeout(id));
+      pendingFrames.forEach((id) => cancelAnimationFrame(id));
+    };
+  }, [remeasure]);
+
+  const later = useCallback((fn: () => void, ms: number) => {
+    timeouts.current.push(window.setTimeout(fn, ms));
   }, []);
 
   const goTo = useCallback(
@@ -84,17 +110,21 @@ export function Testimonials() {
 
       setPhase("out");
       const outTotal = QUOTE_OUT_MS + QUOTE_STAGGER_MS * 4;
-      window.setTimeout(() => {
+      later(() => {
         setIndex(target);
         remeasure(target);
         setPhase("enter");
-        requestAnimationFrame(() => requestAnimationFrame(() => setPhase("in")));
-        window.setTimeout(() => {
+        frames.current.push(
+          requestAnimationFrame(() => {
+            frames.current.push(requestAnimationFrame(() => setPhase("in")));
+          }),
+        );
+        later(() => {
           busy.current = false;
         }, QUOTE_IN_MS);
       }, outTotal);
     },
-    [index, remeasure],
+    [index, remeasure, later],
   );
 
   const restart = useCallback(() => {

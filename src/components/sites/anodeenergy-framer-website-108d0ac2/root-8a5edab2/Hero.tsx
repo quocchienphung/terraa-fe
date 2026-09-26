@@ -1,5 +1,6 @@
 import { HERO } from "@/lib/constants";
 import { SectionLabel } from "../shared/SectionLabel";
+import { RevealText } from "../shared/RevealText";
 
 export function Hero() {
   return (
@@ -35,10 +36,14 @@ export function Hero() {
       <div className="flex w-full flex-col items-start justify-center gap-12 tab:w-[calc(100%-138px)] tab:max-w-[1238px] tab:items-end">
         <div className="flex w-full flex-col items-start justify-end gap-6 tab:flex-row tab:justify-end tab:gap-[120px]">
           <div className="order-2 flex w-full max-w-[300px] flex-col items-start gap-4 overflow-clip tab:order-1 tab:flex-1">
-            <p className="whitespace-pre-wrap text-[14px] font-medium leading-[16.8px] tracking-[-0.56px] text-panel">{HERO.practice}</p>
+            <RevealText as="p" className="whitespace-pre-wrap text-[14px] font-medium leading-[16.8px] tracking-[-0.56px] text-panel">
+              {HERO.practice}
+            </RevealText>
           </div>
           <div className="order-1 flex w-full max-w-[300px] flex-col items-start gap-3 tab:order-2 tab:flex-1">
-            <p className="whitespace-pre-wrap text-[14px] font-medium leading-[16.8px] tracking-[-0.56px] text-panel">{HERO.process}</p>
+            <RevealText as="p" className="whitespace-pre-wrap text-[14px] font-medium leading-[16.8px] tracking-[-0.56px] text-panel">
+              {HERO.process}
+            </RevealText>
           </div>
         </div>
       </div>

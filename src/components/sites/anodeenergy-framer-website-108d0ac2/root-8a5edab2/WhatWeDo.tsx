@@ -1,6 +1,7 @@
 import { WHAT_WE_DO } from "@/lib/constants";
 import { ArrowCta } from "../shared/ArrowCta";
 import { SectionLabel } from "../shared/SectionLabel";
+import { RevealText } from "../shared/RevealText";
 
 export function WhatWeDo() {
   return (
@@ -9,12 +10,13 @@ export function WhatWeDo() {
         <div className="flex w-full flex-col items-start gap-12 desk:gap-20">
           <div className="flex w-full flex-col items-start gap-6 overflow-clip desk:w-[80%]">
             <SectionLabel>{WHAT_WE_DO.label}</SectionLabel>
-            <h3
+            <RevealText
+              as="h3"
               id="what-we-do"
               className="whitespace-pre-wrap text-[32px] font-normal leading-[1.15] tracking-[-1.6px] text-ink-2 tab:text-[40px] tab:tracking-[-2px] desk:text-[48px] desk:tracking-[-2.4px]"
             >
               {WHAT_WE_DO.statement}
-            </h3>
+            </RevealText>
           </div>
 
           <div className="flex w-full flex-col items-start justify-end gap-8 desk:flex-row desk:gap-12">

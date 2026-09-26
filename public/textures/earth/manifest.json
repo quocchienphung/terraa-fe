@@ -1,0 +1,53 @@
+{
+  "sources": {
+    "day": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-topography/july/world.topo.200407.3x5400x2700.jpg",
+    "night": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg",
+    "clouds": "https://assets.science.nasa.gov/content/dam/science/esd/eo/content-feature/bluemarble/images/cloud_combined_2048.jpg",
+    "elevation": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/topography/gebco_08_rev_elev_5400x2700.jpg",
+    "bathymetry": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bathymetry/gebco_08_rev_bath_5400x2700.jpg"
+  },
+  "files": {
+    "earth-day-4k.webp": {
+      "size": [
+        4096,
+        2048
+      ],
+      "bytes": 495784
+    },
+    "earth-day-2k.webp": {
+      "size": [
+        2048,
+        1024
+      ],
+      "bytes": 137960
+    },
+    "earth-night-4k.webp": {
+      "size": [
+        4096,
+        2048
+      ],
+      "bytes": 101286
+    },
+    "earth-night-2k.webp": {
+      "size": [
+        2048,
+        1024
+      ],
+      "bytes": 24492
+    },
+    "earth-masks-2k.webp": {
+      "size": [
+        2048,
+        1024
+      ],
+      "bytes": 410822
+    },
+    "earth-normal-2k.webp": {
+      "size": [
+        2048,
+        1024
+      ],
+      "bytes": 105676
+    }
+  }
+}

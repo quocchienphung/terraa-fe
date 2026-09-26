@@ -1,10 +1,12 @@
 import { TICKER_EYEBROW } from "@/lib/constants";
+import { TICKER } from "@/lib/motion-config";
 import { MARQUEE_LOGOS } from "../shared/icons";
+import { TickerMotion } from "../shared/TickerMotion";
 
 const LOGO_SET_REPEAT = 4;
 const TICK_COUNT = 120;
 
-/** One run of the logo set; the track holds two runs so the -50% keyframe loops seamlessly. */
+/** One run of the logo set; each track holds two identical runs and wraps by one run width. */
 function LogoRun({ ariaHidden = false }: { ariaHidden?: boolean }) {
   return (
     <div aria-hidden={ariaHidden} className="flex flex-none items-center gap-[90px] pr-[90px] text-ink-2">
@@ -34,16 +36,16 @@ export function ClientTicker() {
             <p className="whitespace-pre text-center font-mono text-[10px] uppercase leading-4 text-muted-2">{TICKER_EYEBROW}</p>
           </div>
 
-          <div className="relative h-[82px] w-full">
+          <TickerMotion label="client logo ticker" className="relative h-[82px] w-full">
             <div className="h-[22px] overflow-hidden">
-              <div className="motion-safe-anim flex w-max animate-[marquee_55s_linear_infinite]">
+              <div data-ticker-track data-ticker-speed={TICKER.logoPxPerSecond} className="flex w-max will-change-transform">
                 <LogoRun />
                 <LogoRun ariaHidden />
               </div>
             </div>
 
             <div className="relative mt-7 h-8 overflow-hidden">
-              <div className="motion-safe-anim flex w-max animate-[marquee_90s_linear_infinite]">
+              <div data-ticker-track data-ticker-speed={TICKER.rulerPxPerSecond} className="flex w-max will-change-transform">
                 <TickRun />
                 <TickRun />
               </div>
@@ -53,7 +55,7 @@ export function ClientTicker() {
                 className="absolute left-1/2 top-6 -ml-[5px] h-0 w-0 border-b-[6px] border-l-[5px] border-r-[5px] border-b-ink-2 border-l-transparent border-r-transparent"
               />
             </div>
-          </div>
+          </TickerMotion>
         </div>
       </div>
     </section>
