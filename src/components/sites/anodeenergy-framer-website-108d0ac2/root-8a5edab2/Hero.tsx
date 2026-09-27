@@ -21,7 +21,9 @@ export function Hero() {
           </div>
 
           <div className="flex w-full flex-col items-start gap-6 overflow-clip tab:gap-12">
-            <SectionLabel light>{HERO.label}</SectionLabel>
+            <div className="flex min-h-8 w-full flex-wrap items-center justify-between gap-3">
+              <SectionLabel light>{HERO.label}</SectionLabel>
+            </div>
             <div aria-hidden className="h-px min-h-px w-full bg-white/[0.26]" />
             <div className="flex w-full max-w-[1000px] items-center gap-[10px] pb-[10px]">
               <h1 className="flex-1 text-[48px] font-normal leading-[0.9] tracking-[-1.92px] text-white tab:text-[83px] tab:tracking-[-4.15px] desk:text-[104px] desk:tracking-[-5.2px]">
@@ -48,20 +50,20 @@ export function Hero() {
         </div>
       </div>
 
-      {/* Background video, dimmed like the reference */}
-      <div aria-hidden className="clip-hero absolute inset-0 -z-[1] overflow-hidden">
-        <div className="absolute inset-0 brightness-[0.7]">
-          <video
-            className="absolute inset-0 h-full w-full bg-white object-cover"
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
-            poster={HERO.poster}
-            src={HERO.video}
-          />
-        </div>
+      <div aria-hidden className="clip-hero pointer-events-none absolute inset-0 -z-[1] overflow-hidden bg-[#030405]">
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          className="absolute inset-0 block h-full w-full object-cover object-center"
+        >
+          <source src="/videos/hero.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-x-0 top-0 h-[180px] bg-gradient-to-b from-black/30 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-[100vh] bg-[radial-gradient(ellipse_48%_30%_at_80%_48%,rgba(10,24,20,0.3),transparent_75%)]" />
+        <div className="absolute inset-x-0 top-[26vh] h-[104vh] bg-gradient-to-b from-transparent via-black/35 to-black/45 tab:top-[40vh] tab:h-[90vh]" />
       </div>
     </section>
   );

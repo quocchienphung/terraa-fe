@@ -233,37 +233,29 @@ void main() {
 }
 `;
 
-export interface EarthScene {
-  renderer: WebGLRenderer;
-  camera: PerspectiveCamera;
-  scene: Scene;
-  framing: Group;
-  orient: Group;
+export interface EarthVisual {
   earth: Mesh;
   clouds: Mesh;
-  /** Resolves once every texture is uploaded and shaders are compiled. */
-  ready: Promise<void>;
+  rim: Mesh;
+  earthMaterial: ShaderMaterial;
+  cloudMaterial: ShaderMaterial;
+  rimMaterial: ShaderMaterial;
+  /** World-space sun direction shared by every Earth material (mutate it, don't replace it). */
+  sunDir: Vector3;
   /** Cloud shell yaw relative to the surface; also shifts the surface's coverage/shadow lookup. */
   setCloudYaw(yaw: number): void;
-  setSize(width: number, height: number): void;
-  render(): void;
+  /** Loads the tier's four maps, binds them and uploads them with `renderer`. Rejects with "disposed" if disposed first. */
+  load(renderer: WebGLRenderer, tier: QualityTier): Promise<void>;
   dispose(): void;
 }
 
-export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, background: string): EarthScene {
-  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
-  renderer.outputColorSpace = SRGBColorSpace;
-  renderer.toneMapping = NoToneMapping;
-  renderer.setClearColor(new Color(background), 1);
+/**
+ * The Earth's visual parts without a renderer, camera or loop: surface, cloud shell and rim, added
+ * to `parent` (the group whose quaternion orients the globe). Shared by the Where We Operate section
+ * (through createEarthScene) and the homepage hero cinematic, which draws it with its own renderer.
+ */
+export function createEarthVisual(parent: Group, tier: QualityTier): EarthVisual {
   const quality = QUALITY[tier];
-
-  const scene = new Scene();
-  const camera = new PerspectiveCamera(CAMERA_FOV_DEG, 1, 0.1, 200);
-  const framing = new Group();
-  const orient = new Group();
-  framing.add(orient);
-  scene.add(framing);
-
   const sunDir = new Vector3(...SUN_DIRECTION).normalize();
   const atmoColor = new Vector3(...LOOK.atmosphereColor);
   const placeholder = new Texture();
@@ -301,7 +293,7 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
     },
   });
   const earth = new Mesh(earthGeometry, earthMaterial);
-  orient.add(earth);
+  parent.add(earth);
 
   const cloudGeometry = new SphereGeometry(LOOK.cloudRadius, quality.widthSegments, quality.heightSegments);
   const cloudMaterial = new ShaderMaterial({
@@ -319,7 +311,7 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
     },
   });
   const clouds = new Mesh(cloudGeometry, cloudMaterial);
-  orient.add(clouds);
+  parent.add(clouds);
 
   const rimGeometry = new SphereGeometry(LOOK.rimScale, quality.widthSegments, quality.heightSegments);
   const rimMaterial = new ShaderMaterial({
@@ -336,37 +328,54 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
       maxDepth: { value: Math.sqrt(1 - 1 / (LOOK.rimScale * LOOK.rimScale)) },
     },
   });
-  orient.add(new Mesh(rimGeometry, rimMaterial));
+  const rim = new Mesh(rimGeometry, rimMaterial);
+  parent.add(rim);
 
   let disposed = false;
   const textures: Texture[] = [];
   const loader = new TextureLoader();
-  const urls = EARTH_TEXTURES[tier];
-  const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-
-  const load = async (url: string, color: boolean) => {
-    const t = await loader.loadAsync(url);
-    if (disposed) {
-      t.dispose();
-      throw new Error("disposed");
-    }
-    // Colour maps are sRGB; relief/clouds are data and must not be gamma-decoded.
-    t.colorSpace = color ? SRGBColorSpace : NoColorSpace;
-    t.anisotropy = maxAniso;
-    t.minFilter = LinearMipmapLinearFilter;
-    // Longitude wraps; cloud lookups are offset by the drift and must wrap across ±180°.
-    t.wrapS = RepeatWrapping;
-    textures.push(t);
-    return t;
-  };
 
   const texelOf = (t: Texture) => {
     const img = t.image as { width: number; height: number };
     return new Vector2(1 / img.width, 1 / img.height);
   };
 
-  const ready = Promise.all([load(urls.albedo, true), load(urls.night, true), load(urls.relief, false), load(urls.clouds, false)]).then(
-    async ([albedo, night, relief, cloudTex]) => {
+  return {
+    earth,
+    clouds,
+    rim,
+    earthMaterial,
+    cloudMaterial,
+    rimMaterial,
+    sunDir,
+    setCloudYaw(yaw) {
+      clouds.rotation.y = yaw;
+      earthMaterial.uniforms.cloudOffset.value = cloudUvOffset(yaw);
+    },
+    async load(renderer, loadTier) {
+      const urls = EARTH_TEXTURES[loadTier];
+      const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      const load = async (url: string, color: boolean) => {
+        const t = await loader.loadAsync(url);
+        if (disposed) {
+          t.dispose();
+          throw new Error("disposed");
+        }
+        // Colour maps are sRGB; relief/clouds are data and must not be gamma-decoded.
+        t.colorSpace = color ? SRGBColorSpace : NoColorSpace;
+        t.anisotropy = maxAniso;
+        t.minFilter = LinearMipmapLinearFilter;
+        // Longitude wraps; cloud lookups are offset by the drift and must wrap across ±180°.
+        t.wrapS = RepeatWrapping;
+        textures.push(t);
+        return t;
+      };
+      const [albedo, night, relief, cloudTex] = await Promise.all([
+        load(urls.albedo, true),
+        load(urls.night, true),
+        load(urls.relief, false),
+        load(urls.clouds, false),
+      ]);
       earthMaterial.uniforms.albedoMap.value = albedo;
       earthMaterial.uniforms.nightMap.value = night;
       earthMaterial.uniforms.reliefMap.value = relief;
@@ -374,12 +383,58 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
       earthMaterial.uniforms.reliefTexel.value = texelOf(relief);
       cloudMaterial.uniforms.cloudMap.value = cloudTex;
       cloudMaterial.uniforms.cloudTexel.value = texelOf(cloudTex);
-      await renderer.compileAsync(scene, camera);
-      if (disposed) throw new Error("disposed");
       // Upload every texture now so the first visible frame does not hitch.
       for (const t of textures) renderer.initTexture(t);
     },
-  );
+    dispose() {
+      disposed = true;
+      textures.forEach((t) => t.dispose());
+      placeholder.dispose();
+      [earthGeometry, cloudGeometry, rimGeometry].forEach((g) => g.dispose());
+      [earthMaterial, cloudMaterial, rimMaterial].forEach((m) => m.dispose());
+      parent.remove(earth, clouds, rim);
+    },
+  };
+}
+
+export interface EarthScene {
+  renderer: WebGLRenderer;
+  camera: PerspectiveCamera;
+  scene: Scene;
+  framing: Group;
+  orient: Group;
+  earth: Mesh;
+  clouds: Mesh;
+  /** Resolves once every texture is uploaded and shaders are compiled. */
+  ready: Promise<void>;
+  /** Cloud shell yaw relative to the surface; also shifts the surface's coverage/shadow lookup. */
+  setCloudYaw(yaw: number): void;
+  setSize(width: number, height: number): void;
+  render(): void;
+  dispose(): void;
+}
+
+export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, background: string): EarthScene {
+  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
+  renderer.outputColorSpace = SRGBColorSpace;
+  renderer.toneMapping = NoToneMapping;
+  renderer.setClearColor(new Color(background), 1);
+  const quality = QUALITY[tier];
+
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(CAMERA_FOV_DEG, 1, 0.1, 200);
+  const framing = new Group();
+  const orient = new Group();
+  framing.add(orient);
+  scene.add(framing);
+
+  const visual = createEarthVisual(orient, tier);
+  let disposed = false;
+
+  const ready = visual.load(renderer, tier).then(async () => {
+    await renderer.compileAsync(scene, camera);
+    if (disposed) throw new Error("disposed");
+  });
 
   return {
     renderer,
@@ -387,13 +442,10 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
     scene,
     framing,
     orient,
-    earth,
-    clouds,
+    earth: visual.earth,
+    clouds: visual.clouds,
     ready,
-    setCloudYaw(yaw) {
-      clouds.rotation.y = yaw;
-      earthMaterial.uniforms.cloudOffset.value = cloudUvOffset(yaw);
-    },
+    setCloudYaw: visual.setCloudYaw,
     setSize(width, height) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.maxDpr));
       renderer.setSize(width, height, false);
@@ -405,10 +457,7 @@ export function createEarthScene(canvas: HTMLCanvasElement, tier: QualityTier, b
     },
     dispose() {
       disposed = true;
-      textures.forEach((t) => t.dispose());
-      placeholder.dispose();
-      [earthGeometry, cloudGeometry, rimGeometry].forEach((g) => g.dispose());
-      [earthMaterial, cloudMaterial, rimMaterial].forEach((m) => m.dispose());
+      visual.dispose();
       renderer.dispose();
     },
   };
