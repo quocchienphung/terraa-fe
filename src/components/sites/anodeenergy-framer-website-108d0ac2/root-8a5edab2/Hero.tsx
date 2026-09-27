@@ -57,9 +57,9 @@ export function Hero() {
           muted
           playsInline
           preload="auto"
-          className="absolute inset-0 block h-full w-full object-cover object-center"
+          className="absolute inset-x-0 top-0 block h-[100svh] w-full object-contain object-center"
         >
-          <source src="/videos/hero.mp4" type="video/mp4" />
+          <source src="/videos/hero-2x-60fps.mp4" type="video/mp4" />
         </video>
         <div className="absolute inset-x-0 top-0 h-[180px] bg-gradient-to-b from-black/30 to-transparent" />
         <div className="absolute inset-x-0 top-0 h-[100vh] bg-[radial-gradient(ellipse_48%_30%_at_80%_48%,rgba(10,24,20,0.3),transparent_75%)]" />

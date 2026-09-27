@@ -381,7 +381,7 @@ export const MENU = {
     { label: "Projects", href: "/projects", count: 4 },
   ] satisfies MenuLink[],
   secondary: [
-    { label: "Newsroom", href: "/news/filters/all" },
+    { label: "Viewroom", href: "/viewroom" },
     { label: "Careers", href: "/careers" },
     { label: "Contact", href: "/contact" },
   ] satisfies MenuLink[],
