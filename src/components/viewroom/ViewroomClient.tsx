@@ -6,11 +6,11 @@ import dynamic from "next/dynamic";
 function ViewerSkeleton() {
   return (
     <div className="relative flex h-full w-full items-center justify-center bg-[#121312]">
-      <div className="glass w-[min(300px,calc(100%-32px))] border border-white/10 px-4 py-3.5 text-white">
-        <p className="text-[14px] font-medium tracking-[-0.42px]" aria-live="polite">
+      <div className="w-[min(300px,calc(100%-32px))] rounded-2xl bg-white px-5 py-4 text-farm-ink">
+        <p className="fm-p16" aria-live="polite">
           Starting 3D viewer
         </p>
-        <div className="mt-3 h-px w-full animate-pulse bg-brand/70 motion-reduce:animate-none" />
+        <div className="mt-3 h-1 w-full animate-pulse rounded-full bg-farm-ink/60 motion-reduce:animate-none" />
       </div>
     </div>
   );

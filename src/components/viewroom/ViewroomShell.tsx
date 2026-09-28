@@ -149,12 +149,12 @@ export function ViewroomShell({ debug = false }: { debug?: boolean }) {
         className="h-full w-full"
       />
       {importError ? (
-        <div role="alert" className="glass absolute left-1/2 top-3 z-[7] flex w-[min(440px,calc(100%-24px))] -translate-x-1/2 items-start gap-3 border border-white/10 py-2 pl-4 pr-1 text-white tab:top-4">
+        <div role="alert" className="absolute left-1/2 top-3 z-[7] flex w-[min(440px,calc(100%-24px))] -translate-x-1/2 items-start gap-3 rounded-2xl bg-white py-2 pl-5 pr-1 text-farm-ink shadow-[0_12px_32px_rgba(0,0,0,0.25)] tab:top-4">
           <div className="flex-1 py-1.5">
-            <p className="text-[14px] font-medium leading-[1.35] tracking-[-0.28px]">{importError.message}</p>
-            {importError.details.length > 0 ? <p className="mt-1 break-words font-mono text-[11px] leading-4 text-white/60">{importError.details.join(" · ")}</p> : null}
+            <p className="fm-p16 text-farm-ink">{importError.message}</p>
+            {importError.details.length > 0 ? <p className="mt-1 break-words fm-p12 text-farm-body">{importError.details.join(" · ")}</p> : null}
           </div>
-          <button type="button" aria-label="Dismiss" onClick={() => setImportError(null)} className="flex size-11 flex-none cursor-pointer items-center justify-center text-white/80 hover:text-white focus-visible:outline-2 focus-visible:outline-brand">
+          <button type="button" aria-label="Dismiss" onClick={() => setImportError(null)} className="flex size-11 flex-none cursor-pointer items-center justify-center rounded-full text-farm-ink hover:bg-farm-sand focus-visible:outline-2 focus-visible:outline-farm-ink">
             <X aria-hidden className="size-4" strokeWidth={1.75} />
           </button>
         </div>

@@ -2,16 +2,13 @@
 
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { MAP, MAP_LOCATIONS } from "@/lib/constants";
 import type { MarkerKind } from "@/types/anode";
-import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { DotArrowIcon, MarkerIcon } from "../shared/icons";
 import { RevealText } from "../shared/RevealText";
 import { SectionLabel } from "../shared/SectionLabel";
-import { LOAD_ROOT_MARGIN, ORIENTATION } from "./globe/earth-config";
-import type { FocusRequest, ProjectedMarker } from "./globe/EarthCanvas";
+import { useGlobeController } from "./globe/useGlobeController";
 
 // WebGL island: its own chunk, client-only, mounted when the section nears the viewport.
 const EarthCanvas = dynamic(() => import("./globe/EarthCanvas").then((m) => m.EarthCanvas), { ssr: false });
@@ -19,180 +16,31 @@ const EarthCanvas = dynamic(() => import("./globe/EarthCanvas").then((m) => m.Ea
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const MARKERS = MAP_LOCATIONS.map((l) => l.geo);
 const BACKGROUND = "#0a0a0a";
-/** Desktop card layout: gap to the pin, frame margins, room kept for the legend bar. */
-const CARD_OFFSET_X = 26;
-const CARD_OFFSET_Y = 10;
-const CARD_MARGIN = 12;
-const CARD_BOTTOM_RESERVE = 64;
-const MD = 768;
-
-type Stage = "poster" | "loading" | "ready" | "failed";
 
 /**
  * "Where We Operate": a WebGL Earth (NASA imagery) with pins at real coordinates.
  * The poster renders from SSR and stays as the fallback. The selected location is kept
  * until the visitor picks another (no auto-advance: the globe itself rotates).
+ * Interaction state lives in `useGlobeController` (shared with the Farmio globe section).
  */
 export function GlobalFootprint() {
-  const reduced = useReducedMotion();
-  const [active, setActive] = useState<number>(MAP.initialIndex);
-  const [stage, setStage] = useState<Stage>("poster");
-  const [userPaused, setUserPaused] = useState(false);
-  const [hold, setHold] = useState(false);
-  const [focus, setFocus] = useState<FocusRequest | null>(null);
-
-  const sectionRef = useRef<HTMLElement>(null);
-  const titleRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const pinRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const pinShown = useRef<boolean[]>([]);
-  const lastPoints = useRef<(ProjectedMarker | null)[]>([]);
-  const activeRef = useRef(active);
-  const layout = useRef({ cardW: 300, cardH: 185, titleBottom: 220 });
-  const holdTimer = useRef<number | null>(null);
-  const focusSeq = useRef(0);
-
-  // Mount the WebGL scene only when the section is near the viewport.
-  useEffect(() => {
-    const section = sectionRef.current;
-    if (!section) return;
-    const io = new IntersectionObserver(
-      ([e]) => {
-        if (!e.isIntersecting) return;
-        setStage((s) => (s === "poster" ? "loading" : s));
-        io.disconnect();
-      },
-      { rootMargin: LOAD_ROOT_MARGIN },
-    );
-    io.observe(section);
-    return () => io.disconnect();
-  }, []);
-
-  // Card size and the title's bottom edge, measured off the animation path.
-  useEffect(() => {
-    const card = cardRef.current;
-    const title = titleRef.current;
-    const section = sectionRef.current;
-    if (!card || !title || !section) return;
-    const measure = () => {
-      layout.current = {
-        cardW: card.offsetWidth,
-        cardH: card.offsetHeight,
-        titleBottom: title.offsetTop + title.offsetHeight,
-      };
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(card);
-    ro.observe(title);
-    ro.observe(section);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (holdTimer.current) window.clearTimeout(holdTimer.current);
-    },
-    [],
-  );
-
-  const placeCard = useCallback((points: (ProjectedMarker | null)[], w: number, h: number) => {
-    const card = cardRef.current;
-    if (!card) return;
-    if (w < MD) {
-      card.style.transform = "";
-      card.dataset.hidden = "false";
-      return;
-    }
-    const p = points[activeRef.current];
-    if (!p || p.opacity < 0.35) {
-      card.dataset.hidden = "true";
-      return;
-    }
-    const { cardW, cardH, titleBottom } = layout.current;
-    const x = Math.min(Math.max(p.x + CARD_OFFSET_X, CARD_MARGIN), w - cardW - CARD_MARGIN);
-    const y = Math.min(Math.max(p.y - cardH + CARD_OFFSET_Y, titleBottom + 16), h - cardH - CARD_BOTTOM_RESERVE);
-    card.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
-    card.dataset.hidden = "false";
-  }, []);
-
-  /** Called by the canvas for every rendered frame: writes pin/card transforms directly. */
-  const onProject = useCallback(
-    (points: (ProjectedMarker | null)[], w: number, h: number) => {
-      lastPoints.current = points;
-      points.forEach((p, i) => {
-        const el = pinRefs.current[i];
-        if (!el) return;
-        const show = p !== null && p.opacity > 0.01;
-        if (show !== pinShown.current[i]) {
-          pinShown.current[i] = show;
-          el.style.visibility = show ? "visible" : "hidden";
-          if (show) {
-            el.removeAttribute("tabindex");
-            el.removeAttribute("aria-hidden");
-          } else {
-            el.tabIndex = -1;
-            el.setAttribute("aria-hidden", "true");
-            if (document.activeElement === el) el.blur();
-          }
-        }
-        if (show && p) {
-          el.style.transform = `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, 0) translate(-50%, -50%)`;
-          el.style.opacity = p.opacity.toFixed(3);
-        }
-      });
-      placeCard(points, w, h);
-    },
-    [placeCard],
-  );
-
-  // Back to the docked card when the globe is not (or no longer) available.
-  useEffect(() => {
-    if (stage === "ready") return;
-    const card = cardRef.current;
-    if (card) {
-      card.style.transform = "";
-      card.dataset.hidden = "false";
-    }
-  }, [stage]);
-
-  const engageHold = useCallback(() => {
-    if (holdTimer.current) window.clearTimeout(holdTimer.current);
-    holdTimer.current = null;
-    setHold(true);
-  }, []);
-
-  const releaseHold = useCallback(() => {
-    if (holdTimer.current) window.clearTimeout(holdTimer.current);
-    holdTimer.current = window.setTimeout(() => setHold(false), ORIENTATION.resumeDelayMs);
-  }, []);
-
-  // Keyboard focus holds the rotation; a mouse click leaves focus on the button, so only
-  // `:focus-visible` counts — otherwise the globe would stay held after every click.
-  const holdHandlers = {
-    onPointerEnter: engageHold,
-    onPointerLeave: releaseHold,
-    onFocus: (e: React.FocusEvent<HTMLElement>) => {
-      if (e.target.matches(":focus-visible")) engageHold();
-    },
-    onBlur: releaseHold,
-  };
-
-  const select = (i: number, fromPin = false) => {
-    const n = MAP_LOCATIONS.length;
-    const target = ((i % n) + n) % n;
-    setActive(target);
-    activeRef.current = target;
-    const onScreen = (lastPoints.current[target]?.opacity ?? 0) > 0.5;
-    if (!fromPin && !onScreen && MARKERS[target]) {
-      focusSeq.current += 1;
-      setFocus({ index: target, seq: focusSeq.current });
-    }
-    if (stage === "ready") placeCard(lastPoints.current, sectionRef.current?.clientWidth ?? 0, sectionRef.current?.clientHeight ?? 0);
-  };
+  const {
+    reduced,
+    active,
+    stage,
+    ready,
+    userPaused,
+    setUserPaused,
+    held: hold,
+    focus,
+    setStage,
+    select,
+    onProject,
+    holdHandlers,
+    refs: { sectionRef, titleRef, cardRef, pinRefs },
+  } = useGlobeController(MAP_LOCATIONS, MAP.initialIndex);
 
   const loc = MAP_LOCATIONS[active];
-  const ready = stage === "ready";
 
   return (
     <section

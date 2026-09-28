@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist), "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-bdo-grotesk), "BDO Grotesk Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-spline-mono), ui-monospace, monospace;
   --font-heading: var(--font-sans);
   --font-fragment: var(--font-fragment-mono), ui-monospace, monospace;
@@ -37,9 +37,22 @@
   --ease-cta: cubic-bezier(0.22, 0.61, 0.24, 1);
   --ease-nav: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* Farmio design tokens (measured on https://farmio.framer.website/, see
+     docs/research/farmio-framer-website-711ac6e6/root-8a5edab2/DESIGN_TOKENS.md) */
+  --font-farmio: var(--font-bdo-grotesk), "BDO Grotesk Fallback", ui-sans-serif, system-ui, sans-serif;
+  --color-farm-ink: #04303b;
+  --color-farm-body: #3b3939;
+  --color-farm-lime: #e7f352;
+  --color-farm-sand: #e3e4d4;
+  --color-farm-mist: #f2f3ee;
+  --color-farm-night: #0a0a0a;
+  --ease-farm: cubic-bezier(0.44, 0, 0.56, 1);
+
+  /* Farmio breakpoints: tablet 768 (Tailwind `md`), desktop 1200 (`desk`), large desktop 1440 (`fxl`). */
   --breakpoint-tab: 50.625rem;
   --breakpoint-desk: 75rem;
   --breakpoint-wide: 87.5rem;
+  --breakpoint-fxl: 90rem;
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -396,5 +409,166 @@
   .menu-mark svg,
   .menu-mark svg rect {
     transition: none !important;
+  }
+}
+
+/* ---- Farmio text presets (Framer style presets; sizes per breakpoint: <768 / 768–1199 / ≥1200).
+   Headings balance their lines like the reference (`text-wrap: balance`). ---- */
+@utility fm-h1 {
+  @apply text-balance;
+  font-size: 38px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  font-feature-settings: "salt" on;
+  @media (width >= 48rem) {
+    font-size: 48px;
+    letter-spacing: -0.06em;
+  }
+  @media (width >= 75rem) {
+    font-size: 62px;
+  }
+}
+/* Section headings: 36 below 1200, 44 at 1200–1439, 52 from 1440. */
+@utility fm-h2 {
+  @apply text-balance;
+  font-size: 36px;
+  line-height: 1.2;
+  letter-spacing: -0.06em;
+  @media (width >= 75rem) {
+    font-size: 44px;
+  }
+  @media (width >= 90rem) {
+    font-size: 52px;
+  }
+}
+@utility fm-h3 {
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.06em;
+  @media (width >= 48rem) {
+    font-size: 34px;
+  }
+  @media (width >= 75rem) {
+    font-size: 42px;
+  }
+}
+@utility fm-h4 {
+  @apply text-balance;
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.06em;
+  @media (width >= 48rem) {
+    font-size: 30px;
+  }
+  @media (width >= 75rem) {
+    font-size: 32px;
+  }
+}
+@utility fm-h5 {
+  @apply text-balance;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.05em;
+  @media (width >= 48rem) {
+    font-size: 22px;
+  }
+  @media (width >= 75rem) {
+    font-size: 24px;
+  }
+}
+@utility fm-h6 {
+  font-size: 20px;
+  line-height: 1.6;
+  letter-spacing: -0.02em;
+}
+@utility fm-p18 {
+  font-size: 18px;
+  line-height: 1.6;
+  letter-spacing: -0.02em;
+}
+@utility fm-p16 {
+  font-size: 16px;
+  line-height: 1.6;
+  letter-spacing: -0.02em;
+}
+@utility fm-p14 {
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+@utility fm-p12 {
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+
+@layer components {
+  /* ---- Farmio pill button: lime → ink fill (hover colours are utilities on the element), arrow swaps (measured: ~0.6s) ---- */
+  .fm-btn {
+    transition:
+      background-color 0.6s var(--ease-farm),
+      color 0.6s var(--ease-farm);
+  }
+  .fm-btn .fm-arrow > span {
+    transition: transform 0.6s var(--ease-farm);
+  }
+  .fm-btn .fm-arrow > .fm-arrow-in {
+    transform: translateX(-20px);
+  }
+  .fm-btn:hover .fm-arrow > span,
+  .fm-btn:focus-visible .fm-arrow > span {
+    transform: translateX(20px);
+  }
+  .fm-btn:hover .fm-arrow > .fm-arrow-in,
+  .fm-btn:focus-visible .fm-arrow > .fm-arrow-in {
+    transform: translateX(0);
+  }
+
+  /* ---- footer link underline: grows from the left on hover ---- */
+  .fm-underline > .fm-line {
+    width: 2px;
+    opacity: 0;
+    transition:
+      width 0.4s var(--ease-farm),
+      opacity 0.4s var(--ease-farm);
+  }
+  .fm-underline:hover > .fm-line,
+  .fm-underline:focus-visible > .fm-line {
+    width: 100%;
+    opacity: 1;
+  }
+
+  /* ---- heading word reveal: opacity 0 + blur(4px) → visible (measured ≈ 0.5s, 60ms stagger) ---- */
+  [data-reveal="hidden"] .fm-word {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  [data-reveal="play"] .fm-word {
+    animation: fm-word-in 0.55s var(--ease-farm) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+}
+
+@keyframes fm-word-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-btn,
+  .fm-btn .fm-arrow > span,
+  .fm-underline > .fm-line {
+    transition: none !important;
+  }
+  [data-reveal] .fm-word {
+    animation: none !important;
+    opacity: 1 !important;
+    filter: none !important;
   }
 }

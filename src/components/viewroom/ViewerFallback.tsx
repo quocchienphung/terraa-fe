@@ -37,12 +37,14 @@ export function ViewerFallback({
         // eslint-disable-next-line @next/next/no-img-element -- portable viewer core: no next/image
         <img src={posterUrl} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover opacity-40" />
       ) : null}
-      <div role="alert" className="glass pointer-events-auto relative w-[min(420px,100%)] border border-white/10 p-5 text-white">
-        <Icon aria-hidden className="size-5 text-white/80" strokeWidth={1.75} />
-        <h3 className="mt-3 text-[20px] font-medium leading-[1.2] tracking-[-0.8px]">{title}</h3>
-        <p className="mt-2 text-[14px] leading-[1.45] tracking-[-0.28px] text-white/80">{message}</p>
+      <div role="alert" className="pointer-events-auto relative w-[min(420px,100%)] rounded-[20px] bg-white p-6 text-farm-ink shadow-[0_12px_32px_rgba(0,0,0,0.25)]">
+        <span className="flex size-10 items-center justify-center rounded-full bg-farm-sand">
+          <Icon aria-hidden className="size-5 text-farm-ink" strokeWidth={1.75} />
+        </span>
+        <h3 className="mt-4 fm-h5 text-farm-ink">{title}</h3>
+        <p className="mt-2 fm-p14 text-farm-body">{message}</p>
         {details && details.length > 0 ? (
-          <ul className="mt-3 flex max-h-32 flex-col gap-1 overflow-y-auto font-mono text-[11px] leading-4 text-white/60" data-lenis-prevent>
+          <ul className="mt-3 flex max-h-32 flex-col gap-1 overflow-y-auto rounded-lg bg-farm-mist p-3 fm-p12 text-farm-body" data-lenis-prevent>
             {details.map((d) => (
               <li key={d} className="break-words">
                 {d}
@@ -53,8 +55,8 @@ export function ViewerFallback({
         <div className="mt-5 flex flex-wrap gap-2">
           {actions.map((a) => {
             const cls = cn(
-              "inline-flex h-11 cursor-pointer items-center px-4 text-[12px] font-semibold tracking-[-0.36px] no-underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
-              a.primary ? "bg-brand text-ink hover:bg-white" : "bg-white/[0.08] text-white hover:bg-white/[0.16]",
+              "inline-flex h-11 cursor-pointer items-center rounded-[42px] px-5 fm-p16 no-underline transition-colors duration-300 ease-farm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-farm-ink",
+              a.primary ? "bg-farm-lime text-farm-ink hover:bg-farm-ink hover:text-farm-sand" : "bg-farm-sand text-farm-ink hover:bg-farm-ink hover:text-farm-sand",
             );
             return a.href ? (
               <a key={a.label} href={a.href} className={cls}>

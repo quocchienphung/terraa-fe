@@ -280,7 +280,8 @@ export function TerraViewport({
       {...dragProps}
       className={cn(
         "relative isolate overflow-hidden bg-[#121312] text-white",
-        fullscreen.expanded && "!fixed inset-x-0 bottom-0 top-[72px] z-[40] tab:top-[86px]",
+        // In-page "expanded" fallback sits below the fixed Farmio header (78px bar; 112px from 1200).
+        fullscreen.expanded && "!fixed inset-x-0 bottom-0 top-[78px] z-[40] desk:top-[112px]",
         fullscreen.native && "h-full w-full",
         className,
       )}
@@ -354,7 +355,7 @@ export function TerraViewport({
               setStarted(true);
               setStatus("loading-viewer");
             }}
-            className="relative h-11 cursor-pointer bg-brand px-5 text-[12px] font-semibold tracking-[-0.36px] text-ink hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="relative h-11 cursor-pointer rounded-[42px] bg-farm-lime px-5 fm-p16 text-farm-ink transition-colors duration-300 ease-farm hover:bg-farm-ink hover:text-farm-sand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-farm-lime"
           >
             View in 3D
           </button>
@@ -448,13 +449,13 @@ export function TerraViewport({
       />
 
       {dragging ? (
-        <div className="pointer-events-none absolute inset-2 z-[6] flex items-center justify-center border border-dashed border-brand bg-ink/70">
-          <p className="max-w-[260px] text-center text-[14px] leading-[1.4] tracking-[-0.28px] text-white">Drop a model and its textures to open it here. Nothing is uploaded.</p>
+        <div className="pointer-events-none absolute inset-2 z-[6] flex items-center justify-center rounded-2xl border-2 border-dashed border-farm-lime bg-farm-night/70">
+          <p className="max-w-[260px] text-center fm-p16 text-white">Drop a model and its textures to open it here. Nothing is uploaded.</p>
         </div>
       ) : null}
 
       {debug ? (
-        <div className="pointer-events-none absolute bottom-[76px] left-3 z-[3] font-mono text-[10px] leading-4 text-white/70 tab:bottom-[84px] tab:left-4">
+        <div className="pointer-events-none absolute bottom-[76px] left-3 z-[3] fm-p12 tabular-nums text-white/70 tab:bottom-[84px] tab:left-4">
           <p>
             WebGL2 · {asset?.kind}/{asset?.format} · q:{quality.id}
           </p>

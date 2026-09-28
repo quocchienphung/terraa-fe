@@ -67,7 +67,7 @@ export function OpenModelMenu({
     if (files.length > 0) onFiles(files);
   };
 
-  const item = "flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left text-[13px] leading-[1.3] tracking-[-0.26px] text-white hover:bg-white/[0.08] focus-visible:bg-white/[0.08] focus-visible:outline-none min-h-11";
+  const item = "flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left fm-p14 text-farm-ink hover:bg-farm-sand focus-visible:bg-farm-sand focus-visible:outline-none";
 
   return (
     <div ref={root} className="relative">
@@ -75,34 +75,37 @@ export function OpenModelMenu({
       <input ref={filesInput} type="file" multiple accept={ACCEPT} className="hidden" onChange={onChange} tabIndex={-1} aria-hidden />
       <input ref={folderInput} type="file" multiple className="hidden" onChange={onChange} tabIndex={-1} aria-hidden />
       {open ? (
-        <div id={menuId} role="menu" aria-label="Open model" className="glass absolute right-0 top-full z-10 mt-2 w-[min(300px,calc(100vw-24px))] border border-white/10 py-1 tab:bottom-[calc(100%+12px)] tab:top-auto tab:mt-0">
+        <div id={menuId} role="menu" aria-label="Open model" className="absolute right-0 top-full z-10 mt-2 w-[min(320px,calc(100vw-24px))] rounded-[20px] bg-white p-2 text-farm-ink shadow-[0_12px_32px_rgba(0,0,0,0.25)] tab:bottom-[calc(100%+12px)] tab:top-auto tab:mt-0">
           <button type="button" role="menuitem" className={item} onClick={() => pick(filesInput.current)} autoFocus>
             <span>Choose files…</span>
-            <span className="font-mono text-[10px] uppercase text-white/50">Model + textures</span>
+            <span className="fm-p12 text-farm-body/70">Model + textures</span>
           </button>
           {folderSupported ? (
             <button type="button" role="menuitem" className={item} onClick={() => pick(folderInput.current)}>
               <span>Choose folder…</span>
-              <span className="font-mono text-[10px] uppercase text-white/50">glTF / OBJ bundle</span>
+              <span className="fm-p12 text-farm-body/70">glTF / OBJ bundle</span>
             </button>
           ) : null}
-          <p className="px-3 pb-2 pt-1 text-[11px] leading-[1.35] text-white/50">Files stay on this device. Drag and drop onto the viewer also works.</p>
-          <div className="my-1 h-px bg-white/10" />
-          <p className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase leading-4 text-white/50">Samples</p>
+          <p className="px-3 pb-2 pt-1 fm-p12 text-farm-body">Files stay on this device. Drag and drop onto the viewer also works.</p>
+          <div className="mx-3 my-1 h-px bg-farm-ink/10" />
+          <p className="px-3 pb-1 pt-2 fm-p12 text-farm-body/70">Samples</p>
           {samples.map((s) => (
             <button
               key={s.modelId}
               type="button"
               role="menuitemradio"
               aria-checked={s.modelId === currentId}
-              className={cn(item, s.modelId === currentId && "text-brand")}
+              className={cn(item, s.modelId === currentId && "bg-farm-mist")}
               onClick={() => {
                 setOpen(false);
                 onSample(s);
               }}
             >
-              <span>{s.label}</span>
-              <span className="text-right font-mono text-[10px] uppercase text-white/50">
+              <span className="flex items-center gap-2">
+                {s.modelId === currentId ? <span aria-hidden className="size-2 flex-none rounded-full bg-farm-ink" /> : null}
+                {s.label}
+              </span>
+              <span className="text-right fm-p12 text-farm-body/70">
                 {formatLabel(s.format).replace("Gaussian splat", "Splat")} · {ORIGIN_LABEL[s.origin]}
               </span>
             </button>

@@ -30,7 +30,7 @@ type ToolButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   showLabel?: boolean;
 };
 
-/** 44px square-cut control, site typography, brand fill when active, tooltip on hover/focus. */
+/** 44px pill control in the Farmio style: lime fill when active, white tooltip on hover/focus. */
 export const ToolButton = forwardRef<HTMLButtonElement, ToolButtonProps>(function ToolButton(
   { icon: Icon, label, hint, active, showLabel = true, className, ...rest },
   ref,
@@ -41,9 +41,9 @@ export const ToolButton = forwardRef<HTMLButtonElement, ToolButtonProps>(functio
       type="button"
       aria-label={label}
       className={cn(
-        "group/tb relative inline-flex h-11 min-w-11 cursor-pointer items-center justify-center gap-2 px-3 text-[12px] font-semibold leading-none tracking-[-0.36px] transition-colors duration-[280ms] ease-nav",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-35",
-        active ? "bg-brand text-ink" : "bg-white/[0.06] text-white hover:bg-white/[0.14]",
+        "group/tb relative inline-flex h-11 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-full px-3 fm-p14 leading-none transition-colors duration-300 ease-farm tab:px-4",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-farm-lime disabled:pointer-events-none disabled:opacity-35",
+        active ? "bg-farm-lime text-farm-ink" : "bg-transparent text-white hover:bg-white/[0.14]",
         className,
       )}
       {...rest}
@@ -52,7 +52,7 @@ export const ToolButton = forwardRef<HTMLButtonElement, ToolButtonProps>(functio
       {showLabel ? <span className="hidden whitespace-nowrap tab:inline">{label}</span> : null}
       <span
         role="presentation"
-        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap bg-ink px-2 py-1 font-mono text-[10px] uppercase leading-4 text-white opacity-0 transition-opacity duration-200 group-hover/tb:opacity-100 group-focus-visible/tb:opacity-100"
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-white px-2 py-1 fm-p12 text-farm-ink opacity-0 shadow-[0_4px_16px_rgba(4,48,59,0.18)] transition-opacity duration-200 group-hover/tb:opacity-100 group-focus-visible/tb:opacity-100"
       >
         {hint ?? label}
       </span>
@@ -62,7 +62,7 @@ export const ToolButton = forwardRef<HTMLButtonElement, ToolButtonProps>(functio
 
 function Group({ children, label, className }: { children: ReactNode; label: string; className?: string }) {
   return (
-    <div role="group" aria-label={label} className={cn("glass pointer-events-auto flex gap-1 border border-white/10 p-1", className)}>
+    <div role="group" aria-label={label} className={cn("pointer-events-auto flex gap-1 rounded-[28px] border border-white/10 bg-farm-night/60 p-1 backdrop-blur-[12px]", className)}>
       {children}
     </div>
   );
@@ -123,7 +123,7 @@ export function ViewerToolbar(p: ViewerToolbarProps) {
 export function TourBar({ tour, onPlay, onPause, onRestart, onExit }: { tour: TourState; onPlay: () => void; onPause: () => void; onRestart: () => void; onExit: () => void }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-[76px] z-[3] flex justify-center px-3 tab:bottom-[84px]">
-      <div role="group" aria-label="Tour playback" className="glass pointer-events-auto flex items-center gap-1 border border-white/10 p-1">
+      <div role="group" aria-label="Tour playback" className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-farm-night/60 p-1 backdrop-blur-[12px]">
         {tour.playing ? (
           <ToolButton icon={Pause} label="Pause" showLabel={false} onClick={onPause} />
         ) : (
@@ -131,8 +131,8 @@ export function TourBar({ tour, onPlay, onPause, onRestart, onExit }: { tour: To
         )}
         <ToolButton icon={SkipBack} label="Restart" showLabel={false} onClick={onRestart} />
         <div className="mx-2 w-28 tab:w-44" aria-hidden>
-          <div className="h-px w-full bg-white/20">
-            <div className="h-px bg-brand" style={{ width: `${Math.round(tour.progress * 100)}%` }} />
+          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
+            <div className="h-1 rounded-full bg-farm-lime" style={{ width: `${Math.round(tour.progress * 100)}%` }} />
           </div>
         </div>
         <span className="sr-only" aria-live="polite">
@@ -155,13 +155,13 @@ const STATUS_TEXT: Record<ViewerStatus, string> = {
 };
 
 export function ViewerMeta({ label, tags, status }: { label: string; tags: string[]; status: ViewerStatus }) {
-  const tone = status === "ready" ? "bg-brand" : status === "error" || status === "unsupported" ? "bg-[#ff6b5a]" : "bg-white/50";
+  const tone = status === "ready" ? "bg-farm-lime ring-1 ring-farm-ink/40" : status === "error" || status === "unsupported" ? "bg-[#ff2244]" : "bg-farm-ink/40";
   return (
-    <div className="glass pointer-events-auto max-w-[min(360px,calc(100%-24px))] border border-white/10 px-3 py-2.5 tab:px-4 tab:py-3">
-      <p className="whitespace-nowrap font-mono text-[10px] uppercase leading-4 text-white/60">{tags.join(" · ")}</p>
-      <h2 className="mt-1 truncate text-[18px] font-medium leading-[1.2] tracking-[-0.72px] text-white tab:text-[20px]">{label}</h2>
-      <p className="mt-1.5 flex items-center gap-2 font-mono text-[10px] uppercase leading-4 text-white/80">
-        <span aria-hidden className={cn("block size-1.5 flex-none", tone, status === "loading-asset" && "animate-pulse")} />
+    <div className="pointer-events-auto max-w-[min(360px,calc(100vw-48px))] rounded-2xl bg-white px-3 py-2.5 text-farm-ink shadow-[0_8px_24px_rgba(0,0,0,0.18)] tab:px-4 tab:py-3">
+      <p className="whitespace-nowrap fm-p12 text-farm-body">{tags.join(" · ")}</p>
+      <h2 className="mt-0.5 truncate fm-h5 text-farm-ink">{label}</h2>
+      <p className="mt-1.5 flex items-center gap-2 fm-p12 text-farm-body">
+        <span aria-hidden className={cn("block size-2 flex-none rounded-full", tone, status === "loading-asset" && "animate-pulse")} />
         <span aria-live="polite">{STATUS_TEXT[status]}</span>
       </p>
     </div>
@@ -171,7 +171,7 @@ export function ViewerMeta({ label, tags, status }: { label: string; tags: strin
 export function FlyHint({ locked }: { locked: boolean }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-3 z-[3] hidden justify-center px-3 tab:top-4 tab:flex">
-      <p className="glass border border-white/10 px-3 py-2 font-mono text-[10px] uppercase leading-4 text-white/85">
+      <p className="rounded-full bg-white px-4 py-2 fm-p12 text-farm-ink shadow-[0_4px_16px_rgba(0,0,0,0.18)]">
         {locked ? "WASD move · Q/E down/up · Shift faster · Esc release mouse" : "Click the scene to look around · WASD move · Esc back to Orbit"}
       </p>
     </div>

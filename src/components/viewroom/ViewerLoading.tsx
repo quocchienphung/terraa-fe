@@ -21,12 +21,12 @@ export function ViewerLoading({ status, progress }: { status: ViewerStatus; prog
   const mb = progress?.loaded ? (progress.loaded / (1024 * 1024)).toFixed(1) : null;
   return (
     <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center p-4">
-      <div className="glass w-[min(300px,100%)] border border-white/10 px-4 py-3.5 text-white">
+      <div className="w-[min(300px,100%)] rounded-2xl bg-white px-5 py-4 text-farm-ink shadow-[0_12px_32px_rgba(0,0,0,0.25)]">
         <div className="flex items-baseline justify-between gap-3">
-          <p className="text-[14px] font-medium tracking-[-0.42px]" aria-live="polite">
+          <p className="fm-p16 text-farm-ink" aria-live="polite">
             {phase}
           </p>
-          <p className="font-mono text-[10px] uppercase leading-4 text-white/60" aria-hidden>
+          <p className="fm-p12 tabular-nums text-farm-body" aria-hidden>
             {pct !== null ? `${pct}%` : progress?.phase === "fetching" && mb ? `${mb} MB` : ""}
           </p>
         </div>
@@ -36,12 +36,12 @@ export function ViewerLoading({ status, progress }: { status: ViewerStatus; prog
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={pct ?? undefined}
-          className="relative mt-3 h-px w-full overflow-hidden bg-white/15"
+          className="relative mt-3 h-1 w-full overflow-hidden rounded-full bg-farm-sand"
         >
           {pct !== null ? (
-            <div className="h-px bg-brand transition-[width] duration-200" style={{ width: `${pct}%` }} />
+            <div className="h-1 rounded-full bg-farm-ink transition-[width] duration-200" style={{ width: `${pct}%` }} />
           ) : (
-            <div className="absolute inset-0 animate-pulse bg-brand/70 motion-reduce:animate-none" />
+            <div className="absolute inset-0 animate-pulse rounded-full bg-farm-ink/60 motion-reduce:animate-none" />
           )}
         </div>
       </div>
