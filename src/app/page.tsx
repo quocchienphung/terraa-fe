@@ -20,7 +20,7 @@ import { Testimonials } from "@/components/sites/farmio-framer-website-711ac6e6/
 export default function Home() {
   return (
     <>
-      <Header />
+      <Header surface="dark" />
       <main className="relative bg-white">
         <Hero />
         <LogoTicker />

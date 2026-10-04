@@ -280,8 +280,9 @@ export function TerraViewport({
       {...dragProps}
       className={cn(
         "relative isolate overflow-hidden bg-[#121312] text-white",
-        // In-page "expanded" fallback sits below the fixed Farmio header (78px bar; 112px from 1200).
-        fullscreen.expanded && "!fixed inset-x-0 bottom-0 top-[78px] z-[40] desk:top-[112px]",
+        // In-page "expanded" fallback (no Fullscreen API, e.g. iPhone): covers the whole window,
+        // site header included; Exit fullscreen / Escape bring the page back.
+        fullscreen.expanded && "!fixed inset-0 z-[70]",
         fullscreen.native && "h-full w-full",
         className,
       )}
